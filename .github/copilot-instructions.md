@@ -10,29 +10,44 @@ treasury and followers via prophecies, raids, and governance.
 contracts/   — Solidity 0.8.24 + Hardhat (Monad EVM, chain 10143)
 agent/       — TypeScript ESM backend (tsx runner, Express API on :3001)
 frontend/    — Next.js 16 + React 19 + Tailwind v4 (dark occult theme)
+scripts/     — Workflow automation (test-workflow.ts)
 ```
 
-Root `package.json` uses **npm workspaces**. Install per-package:
-`cd contracts && npm i`, `cd agent && npm i`, `cd frontend && npm i`.
+Root `package.json` uses **npm workspaces**. Dependencies may be hoisted to
+root `node_modules/`. Install: `cd {package} && npm i` or `npm i` at root.
 
-### Build & Run
+### Critical Developer Workflows
 
 ```bash
-# Contracts
+# FIRST: Set up environment
+cp .env.example .env
+# Edit .env with PRIVATE_KEY, CULT_REGISTRY_ADDRESS, INSFORGE_ANON_KEY (JWT, not ik_*)
+
+# Test full stack workflow
+npx tsx scripts/test-workflow.ts          # comprehensive health check
+npx tsx scripts/test-workflow.ts --quick  # skip slow tests
+npx tsx scripts/test-workflow.ts --fix    # auto-fix missing deps
+
+# Deploy contracts (run ONCE per testnet)
 cd contracts && npx hardhat compile
-npx hardhat test                          # tests in contracts/test/
 npx hardhat run scripts/deploy.ts --network monadTestnet
+# Copy CultRegistry address → .env CULT_REGISTRY_ADDRESS
 
-# Agent backend
-cd agent && npm run dev                   # tsx watch mode
-npm run start                             # production
+# Start all services (separate terminals)
+cd agent && npm run dev        # Agent backend (:3001)
+cd frontend && npm run dev     # Next.js frontend (:3000)
 
-# Frontend
-cd frontend && npm run dev                # Next.js dev server
+# Root shortcuts
+npm run contracts:test         # Run Hardhat tests
+npm run agent:dev              # Start agent backend
+npm run frontend:dev           # Start frontend
 ```
 
-Root shortcuts: `npm run contracts:test`, `npm run agent:dev`,
-`npm run frontend:dev`.
+**Bootstrap sequence**: When agent backend starts for the first time, it:
+1. Checks InsForge DB for existing agents
+2. If empty, seeds 3 agents from `agent/data/personalities.json`
+3. Each agent creates on-chain cult via `CultRegistry.registerCult()`
+4. Agents begin 30-60s autonomous tick loops
 
 ### Architecture & Data Flow
 
@@ -52,92 +67,198 @@ Frontend (Next.js) ──5s polling──▶ Agent API (Express :3001)
                               CultRegistry.sol + nad.fun
 ```
 
+**Key components**:
 - **`AgentOrchestrator`** (`agent/src/core/AgentOrchestrator.ts`):
-  Bootstraps shared services, creates `CultAgent` instances, syncs state to
-  API `stateStore` every 3s. On first run seeds from `agent/data/personalities.json`;
-  subsequent runs restore from InsForge DB.
-- **`CultAgent`** (`agent/src/core/CultAgent.ts`): 30–60s loop per agent.
-  Each cycle: fetch on-chain state → LLM decides action → execute → resolve
-  old prophecies. Persists state to InsForge after every cycle.
-- **`TransactionQueue`** (`agent/src/chain/TransactionQueue.ts`): Serialises
-  on-chain writes with 3-retry exponential backoff. Each agent has its own
-  instance.
-- **`InsForgeService`** (`agent/src/services/InsForgeService.ts`): All DB
-  persistence (agents, memories, raids, prophecies, alliances) via
-  `@insforge/sdk`. Singleton client, functional exports (not class methods).
-  All operations return `{data, error}`.
-- **Frontend**: `usePolling` hook (5s) polls Express REST API. SSE endpoint
-  exists at `/api/events` for real-time. No global state library — each
-  component polls independently.
+  Singleton orchestrator. Bootstraps shared services, creates `CultAgent`
+  instances, syncs state to API `stateStore` every 3s. On first run seeds
+  from `agent/data/personalities.json`; subsequent runs restore from InsForge.
+  Each agent gets its own LLM instance + wallet + ContractService.
+
+- **`CultAgent`** (`agent/src/core/CultAgent.ts`): 30–60s autonomous loop.
+  Each cycle: (1) fetch on-chain state, (2) LLM decides action, (3) execute,
+  (4) resolve old prophecies, (5) persist to InsForge. Actions: prophecy,
+  recruit, raid, govern, ally, betray, coup, leak, meme, bribe.
+
+- **`TransactionQueue`** (`agent/src/chain/TransactionQueue.ts`): Per-agent
+  TX serializer with 3-retry exponential backoff. Prevents nonce collisions.
+
+- **`MemoryService`** (`agent/src/services/MemoryService.ts`): Persistent
+  episodic memory. Tracks raid outcomes, trust scores (-1.0 to 1.0), win/loss
+  streaks. Backed by InsForge tables: `agent_memories`, `trust_records`,
+  `streaks`. LLM receives `MemorySnapshot` for context-aware decisions.
+
+- **`InsForgeService`** (`agent/src/services/InsForgeService.ts`): Single
+  `@insforge/sdk` client, functional exports (no class). 17 DB tables:
+  `agents`, `agent_memories`, `trust_records`, `streaks`, `prophecies`,
+  `raids`, `alliances`, `betrayals`, `governance_proposals`, `budgets`,
+  `evolution_traits`, `llm_decisions`, `agent_messages`, `memes`,
+  `token_transfers`, `spoils_votes`, `defection_events`. All ops return
+  `{data, error}`. Client created via `getInsForgeClient()` singleton.
+
+- **Frontend**: No global state. Each component uses `usePolling(fetcher, 5000)`
+  hook to poll Express API. SSE endpoint at `/api/events` for real-time
+  (event-stream). API routes in `agent/src/api/routes/` sync from `stateStore`.
 
 ### Agent Backend Conventions
 
-- **ESM imports**: Always use `.js` extensions in import paths.
-  `import { config } from "../config.js"` — the `tsconfig` uses
-  `"module": "ESNext"` + `"moduleResolution": "bundler"`.
-- **Contract ABIs**: Defined as inline human-readable strings in
-  `agent/src/config.ts` (e.g., `CULT_REGISTRY_ABI`). Never import from
-  `contracts/artifacts/`.
-- **Service injection**: Services are classes instantiated once in
-  `AgentOrchestrator` and passed to `CultAgent` via constructor. Per-agent
-  services (LLM, ContractService) get the agent's own wallet/API key.
-- **Logger**: Every file creates `const log = createLogger("ModuleName")`
-  from `agent/src/utils/logger.ts`. Outputs `[ISO] [LEVEL] [Module] msg`.
-  Enable debug with `DEBUG=1`.
-- **LLM**: OpenAI SDK pointed at `api.x.ai/v1` with model `grok-3-fast`.
-  Every LLM call has try/catch with a fallback response — agents must never
-  crash on API failure.
-- **Per-agent wallets**: Each agent gets its own `ethers.Wallet` (generated
-  on first creation, stored in InsForge DB). `ContractService` accepts an
-  optional `privateKey` param.
+**ESM imports**: Always `.js` extensions in imports:
+```typescript
+import { config } from "../config.js"  // NOT "../config"
+```
+Reason: `tsconfig` uses `"module": "ESNext"` + `"moduleResolution": "bundler"`.
+
+**Contract ABIs**: Inline human-readable strings in `agent/src/config.ts`:
+```typescript
+export const CULT_REGISTRY_ABI = [
+  "function registerCult(string name, string prophecyPrompt, address tokenAddress) payable returns (uint256)",
+  // ...
+] as const;
+```
+Never import from `contracts/artifacts/` — keeps agent runtime lightweight.
+
+**Service injection**: All services instantiated in `AgentOrchestrator.bootstrap()`,
+passed to `CultAgent` via constructor. Per-agent services (LLM, ContractService)
+get agent's own wallet/API key. Shared services (MemoryService, RaidService)
+are singleton instances.
+
+**Logger pattern**:
+```typescript
+import { createLogger } from "../utils/logger.js";
+const log = createLogger("ModuleName");
+log.info("message"), log.warn(), log.error()
+```
+Enable debug: `DEBUG=1` env var. Outputs `[ISO] [LEVEL] [Module] msg`.
+
+**LLM resilience**: Every LLM call has try/catch with fallback response.
+Agents must never crash on API failure. Example:
+```typescript
+try {
+  const decision = await this.llm.decideAction(...);
+} catch (error) {
+  return { action: "idle", reason: "LLM unavailable" };
+}
+```
+LLM uses OpenAI SDK → `api.x.ai/v1` with model `grok-3-fast`. Fallback
+responses ensure agents always progress.
+
+**Per-agent wallets**: Each agent row in InsForge DB has `wallet_address` +
+`wallet_private_key` (generated on creation). `ContractService` constructor
+accepts optional `privateKey` — each agent gets its own instance.
+
+**State persistence**: After every agent tick, `updateAgentState(agentDbId, {...})`
+persists to InsForge (fire-and-forget). No await — non-blocking. Enables
+crash recovery.
 
 ### Smart Contracts
 
-Seven Solidity contracts in `contracts/contracts/` — no OpenZeppelin,
-all hand-rolled access control:
+Seven contracts in `contracts/contracts/` — **no OpenZeppelin**, hand-rolled
+access control + custom economics:
 
-| Contract | Purpose |
-| --- | --- |
-| `CultRegistry.sol` | Core state: cults, treasury, followers, raids, prophecies |
-| `GovernanceEngine.sol` | Budget proposals (raid/growth/defense/reserve %) + voting |
-| `FaithStaking.sol` | Stake MON for faith points |
-| `EconomyEngine.sol` | Token economics |
-| `SocialGraph.sol` | On-chain alliance/trust tracking |
-| `RaidEngine.sol` | Raid resolution logic |
-| `EventEmitter.sol` | Cross-contract event hub |
+| Contract | Purpose | Key Functions |
+|----------|---------|---------------|
+| `CultRegistry.sol` | Core state | `registerCult()`, `depositToTreasury()`, `joinCult()`, `recordRaid()`, `createProphecy()` |
+| `GovernanceEngine.sol` | Budget proposals + voting | `createProposal()`, `castVote()`, `executeProposal()`, `proposeCoup()` |
+| `FaithStaking.sol` | Stake MON for faith points | `stake()`, `unstake()`, `claimYield()` |
+| `EconomyEngine.sol` | Token economics | Revenue distribution, burn mechanics |
+| `SocialGraph.sol` | On-chain trust tracking | Alliance formation (off-chain only for MVP) |
+| `RaidEngine.sol` | Raid resolution | Combat logic, spoils votes (off-chain for MVP) |
+| `EventEmitter.sol` | Cross-contract events | Event hub for frontend indexing |
 
-Tests use Hardhat toolbox (ethers + chai), nested `describe` blocks per
-feature, `loadFixture` for fresh deploys. Typed contracts via TypeChain.
+**Test pattern**: Hardhat + ethers + chai. Each test file has nested `describe`
+blocks per feature. Use `loadFixture` for fresh contract deploys per test.
+TypeChain generates typed contract wrappers in `contracts/typechain-types/`.
+
+```typescript
+describe("CultRegistry", () => {
+  describe("registerCult", () => {
+    it("should create cult with initial treasury", async () => {
+      const { registry, wallet } = await loadFixture(deployFixture);
+      const tx = await registry.registerCult("Cult Name", "prompt", ethers.ZeroAddress, { value: ethers.parseEther("0.01") });
+      // ...
+    });
+  });
+});
+```
 
 ### Frontend Conventions
 
-- App Router with `"use client"` pages. Path alias `@/` → `src/`.
-- Components in `src/components/` — PascalCase filenames, no barrel exports,
-  import directly: `import { Navbar } from "@/components/Navbar"`.
-- API wrapper in `src/lib/api.ts` — plain object with typed fetch methods,
-  read-only (no mutations). All types co-located in that file.
-- `src/lib/constants.ts`: `API_BASE` from env, cult colour/icon maps for
-  IDs 0/1/2 (purple/red/gold).
-- `usePolling` hook: generic `<T>(fetcher, interval)` — wrap fetcher in
-  `useCallback` at call site to stabilize reference.
-- Dark theme: `bg-[#0a0a0a]` base, `className="dark"` on `<html>`.
-  Purple/red/gold gradient accents per cult.
+**App Router**: All pages in `frontend/src/app/`. Use `"use client"` directive
+for components with hooks. Path alias `@/` → `src/`.
+
+**No barrel exports**: Import directly from component files:
+```typescript
+import { Navbar } from "@/components/Navbar"  // NOT from index.ts
+```
+
+**API layer**: `src/lib/api.ts` exports `api` object with typed methods:
+```typescript
+export const api = {
+  getStats: () => fetchJSON<Stats>("/api/stats"),
+  getCults: () => fetchJSON<Cult[]>("/api/cults"),
+  // ... all types co-located in same file
+}
+```
+Read-only — no mutations. All writes go through agent backend.
+
+**Polling hook**: `src/hooks/usePolling.ts` — generic `<T>(fetcher, interval)`:
+```typescript
+const { data: stats } = usePolling<Stats>(
+  useCallback(() => api.getStats(), []),  // wrap in useCallback!
+  5000  // 5s poll interval
+);
+```
+**Critical**: Wrap fetcher in `useCallback` to prevent infinite re-renders.
+
+**Theme**: Dark occult aesthetic. Base: `bg-[#0a0a0a]`, `className="dark"` on
+`<html>`. Cult colors (gradient accents):
+```typescript
+export const CULT_COLORS: Record<number, string> = {
+  0: "#7c3aed",  // Purple — Church of Eternal Candle
+  1: "#dc2626",  // Red — Order of Red Dildo
+  2: "#f59e0b",  // Gold — Temple of Diamond Hands
+};
+```
+See `src/lib/constants.ts` for full color + icon mappings.
 
 ### Environment Variables
 
-All config flows through `agent/src/config.ts` reading from `../.env` (root).
-See `.env.example` for the full list.
+Root `.env` (read by `agent/src/config.ts` via `dotenv`):
 
-**Required**: `PRIVATE_KEY`, `XAI_API_KEY`, `CULT_REGISTRY_ADDRESS`.
-**Optional**: `GOVERNANCE_ENGINE_ADDRESS`, `CULT_TOKEN_ADDRESS`,
-`AGENT_API_PORT`, `INSFORGE_BASE_URL`, `INSFORGE_ANON_KEY`.
-Frontend reads `NEXT_PUBLIC_API_URL` (defaults to `http://localhost:3001`).
+**Required**:
+- `PRIVATE_KEY` — Agent deployer wallet (0x... 64-char hex)
+- `CULT_REGISTRY_ADDRESS` — Deployed CultRegistry contract
+- `INSFORGE_ANON_KEY` — **JWT token** (not `ik_*` admin key). Get via
+  `mcp_insforge_get-anon-key` MCP tool or InsForge console.
 
-### Frontend Patterns
+**Optional**:
+- `XAI_API_KEY` — Grok LLM key (agents use fallback responses if missing)
+- `GOVERNANCE_ENGINE_ADDRESS`, `CULT_TOKEN_ADDRESS` — Other contracts
+- `INSFORGE_BASE_URL` — Default: `https://3wcyg4ax.us-east.insforge.app`
 
-- App Router with `"use client"` pages polling agent API.
-- `src/lib/api.ts` — type-safe fetch wrapper; `src/lib/constants.ts` for
-  `API_BASE` and cult colour maps.
-- `src/hooks/usePolling.ts` — generic hook wrapping `setInterval` + fetch.
-- Components are in `src/components/` — no barrel exports, import directly.
-- Dark theme: `bg-[#0a0a0a]` base with purple/red/gold gradient accents.
+**Frontend**: Prefix with `NEXT_PUBLIC_` for client-side:
+```bash
+NEXT_PUBLIC_API_URL=http://localhost:3001  # Agent API endpoint
+```
+
+### Debugging & Troubleshooting
+
+**Agent backend not loading agents?**
+1. Check InsForge DB has 17 tables (run `scripts/test-workflow.ts`)
+2. Verify `INSFORGE_ANON_KEY` is JWT (starts with `eyJ...`), not admin key
+3. Restart backend: `cd agent && npm run dev`
+4. Check logs for bootstrap errors
+
+**Contract calls failing?**
+- Verify wallet has MON balance (check in `test-workflow.ts` output)
+- Confirm `CULT_REGISTRY_ADDRESS` is correct deployed contract
+- Check Monad RPC: `https://testnet-rpc.monad.xyz` (chain 10143)
+
+**Frontend showing 0 cults?**
+- Backend must run at least 1 agent tick cycle (30-60s)
+- Check `/api/health` shows `agents > 0`
+- Verify on-chain: `CultRegistry.getTotalCults()` via Hardhat console
+
+**Test all systems**:
+```bash
+npx tsx scripts/test-workflow.ts  # 69 checks across 9 categories
+```
