@@ -444,4 +444,102 @@ contract SocialGraph {
         Alliance storage a = alliances[allianceId];
         return viewerCultId == a.cult1Id || viewerCultId == a.cult2Id;
     }
+
+    // ═══════════════════════════════════════════════════════════════════
+    //  NON-ZERO-SUM: COOPERATION YIELD  (Alliance Value Creation)
+    // ═══════════════════════════════════════════════════════════════════
+    //
+    //  Sustained alliances generate new value for BOTH parties.
+    //  Creates a prisoner's dilemma: cooperate for steady growth,
+    //  or betray for a one-time raid advantage.
+    //
+    //  Yield = cooperationBps% of (cult1Treasury + cult2Treasury)
+    //  Split 50/50 between allies. Requires active alliance for
+    //  minimum cooperationMinDuration before first harvest.
+
+    uint256 public cooperationBps = 50;            // 0.5% of combined treasury per harvest
+    uint256 public cooperationCooldown = 300;      // 5 minutes between harvests
+    uint256 public cooperationMinDuration = 120;   // alliance must be 2 min old to harvest
+    mapping(uint256 => uint256) public lastCoopHarvest; // allianceId -> last harvest time
+    uint256 public totalCooperationYield;          // global cooperation yield minted
+
+    event CooperationYieldHarvested(
+        uint256 indexed allianceId,
+        uint256 indexed cult1Id,
+        uint256 indexed cult2Id,
+        uint256 yield1,
+        uint256 yield2,
+        uint256 timestamp
+    );
+
+    /**
+     * @notice Harvest cooperation yield from a sustained alliance.
+     *         Both cults receive new value — non-zero-sum.
+     * @param allianceId The alliance generating yield
+     * @param cult1Treasury Current treasury of cult1
+     * @param cult2Treasury Current treasury of cult2
+     * @return yield1 Amount credited to cult1
+     * @return yield2 Amount credited to cult2
+     */
+    function harvestCooperationYield(
+        uint256 allianceId,
+        uint256 cult1Treasury,
+        uint256 cult2Treasury
+    ) external onlyOwner returns (uint256 yield1, uint256 yield2) {
+        Alliance storage a = alliances[allianceId];
+        require(a.status == AllianceStatus.ACTIVE, "Alliance not active");
+        require(block.timestamp < a.expiresAt, "Alliance expired");
+        require(
+            block.timestamp >= a.formedAt + cooperationMinDuration,
+            "Alliance too young"
+        );
+        require(
+            block.timestamp >= lastCoopHarvest[allianceId] + cooperationCooldown,
+            "Harvest on cooldown"
+        );
+
+        // Calculate yield from combined treasury (new value created)
+        uint256 combinedTreasury = cult1Treasury + cult2Treasury;
+        uint256 totalYield = (combinedTreasury * cooperationBps) / 10000;
+
+        // Split 50/50 between allies
+        yield1 = totalYield / 2;
+        yield2 = totalYield - yield1;
+
+        lastCoopHarvest[allianceId] = block.timestamp;
+        totalCooperationYield += totalYield;
+
+        // Boost trust for successful cooperation
+        _updateTrust(a.cult1Id, a.cult2Id, 5, "cooperation_yield");
+        _updateTrust(a.cult2Id, a.cult1Id, 5, "cooperation_yield");
+
+        emit CooperationYieldHarvested(
+            allianceId, a.cult1Id, a.cult2Id,
+            yield1, yield2, block.timestamp
+        );
+    }
+
+    // ── Cooperation Admin ──────────────────────────────────────────────
+
+    function setCooperationBps(uint256 newBps) external onlyOwner {
+        require(newBps <= 200, "Max 2%");
+        cooperationBps = newBps;
+    }
+
+    function setCooperationCooldown(uint256 newCooldown) external onlyOwner {
+        cooperationCooldown = newCooldown;
+    }
+
+    function getCooperationStats(uint256 allianceId) external view returns (
+        uint256 lastHarvest,
+        bool canHarvest,
+        uint256 totalYieldGlobal
+    ) {
+        Alliance storage a = alliances[allianceId];
+        bool ready = a.status == AllianceStatus.ACTIVE &&
+                     block.timestamp < a.expiresAt &&
+                     block.timestamp >= a.formedAt + cooperationMinDuration &&
+                     block.timestamp >= lastCoopHarvest[allianceId] + cooperationCooldown;
+        return (lastCoopHarvest[allianceId], ready, totalCooperationYield);
+    }
 }

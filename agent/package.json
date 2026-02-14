@@ -9,7 +9,6 @@
     "build": "tsc"
   },
   "dependencies": {
-<<<<<<< HEAD
     "@insforge/sdk": "^1.1.5",
     "cors": "^2.8.5",
     "dotenv": "^16.4.0",
@@ -20,17 +19,6 @@
   "devDependencies": {
     "@types/cors": "^2.8.17",
     "@types/express": "^5.0.0",
-=======
-    "openai": "^4.78.0",
-    "ethers": "^6.13.0",
-    "express": "^4.21.0",
-    "cors": "^2.8.5",
-    "dotenv": "^16.4.0"
-  },
-  "devDependencies": {
-    "@types/express": "^5.0.0",
-    "@types/cors": "^2.8.17",
->>>>>>> 8500a7ce99f53a5dac5261e06d78e2bbe93a8481
     "@types/node": "^22.0.0",
     "tsx": "^4.19.0",
     "typescript": "^5.6.0"

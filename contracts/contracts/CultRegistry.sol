@@ -211,7 +211,6 @@ contract CultRegistry {
         }
         return allCults;
     }
-<<<<<<< HEAD
 
     // ═══════════════════════════════════════════════════════════════════
     //  AGENT IDENTITY  (Design Doc §3.1)
@@ -392,6 +391,4 @@ contract CultRegistry {
     function getTotalDefections() external view returns (uint256) {
         return nextDefectionId;
     }
-=======
->>>>>>> 8500a7ce99f53a5dac5261e06d78e2bbe93a8481
 }

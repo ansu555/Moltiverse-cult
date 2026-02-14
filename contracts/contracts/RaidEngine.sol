@@ -19,6 +19,7 @@ contract RaidEngine {
         uint256 wagerAmount;
         bool attackerWon;
         uint256 spoilsToWinner;
+        uint256 warDividend;       // NEW: bonus value minted for winner (non-zero-sum)
         uint256 protocolFee;
         uint256 burned;
         uint256 timestamp;
@@ -30,9 +31,10 @@ contract RaidEngine {
 
     uint256 public nextRaidId;
     uint256 public cooldownDuration = 120;   // 2 minutes in seconds
-    uint256 public spoilsWinnerBps = 7000;   // 70%
-    uint256 public spoilsProtocolBps = 2000;  // 20%
-    uint256 public spoilsBurnBps = 1000;      // 10%
+    uint256 public spoilsWinnerBps = 8000;   // 80% (up from 70% — less extractive)
+    uint256 public spoilsProtocolBps = 1000;  // 10% (down from 20%)
+    uint256 public spoilsBurnBps = 1000;      // 10% (same)
+    uint256 public warDividendBps = 1500;     // 15% bonus MINTED for winner (non-zero-sum)
 
     // Raid storage
     mapping(uint256 => Raid) public raids;
@@ -50,6 +52,7 @@ contract RaidEngine {
     uint256 public totalRaids;
     uint256 public totalProtocolFees;
     uint256 public totalBurned;
+    uint256 public totalWarDividendsMinted;   // new value created through raids
 
     // ── Events ─────────────────────────────────────────────────────────
     event RaidInitiated(
@@ -63,11 +66,13 @@ contract RaidEngine {
         uint256 indexed raidId,
         bool attackerWon,
         uint256 spoilsToWinner,
+        uint256 warDividend,
         uint256 protocolFee,
         uint256 burned
     );
 
     event CooldownUpdated(uint256 oldDuration, uint256 newDuration);
+    event WarDividendMinted(uint256 indexed raidId, uint256 indexed winnerCultId, uint256 amount);
 
     // ── Modifiers ──────────────────────────────────────────────────────
     modifier onlyOwner() {
@@ -158,10 +163,13 @@ contract RaidEngine {
         uint256 wagerAmount,
         bool attackerWon
     ) internal returns (uint256 raidId) {
-        // Spoils calculation
+        // Spoils calculation (from wager)
         uint256 spoils = (wagerAmount * spoilsWinnerBps) / 10000;
         uint256 fee = (wagerAmount * spoilsProtocolBps) / 10000;
         uint256 burn = wagerAmount - spoils - fee;
+
+        // War dividend: NEW value minted on top of wager (non-zero-sum)
+        uint256 dividend = (wagerAmount * warDividendBps) / 10000;
 
         raidId = nextRaidId++;
         raids[raidId] = Raid({
@@ -171,20 +179,24 @@ contract RaidEngine {
             wagerAmount: wagerAmount,
             attackerWon: attackerWon,
             spoilsToWinner: spoils,
+            warDividend: dividend,
             protocolFee: fee,
             burned: burn,
             timestamp: block.timestamp
         });
 
         // Update stats
-        _updateStats(attackerId, defenderId, attackerWon, spoils, wagerAmount);
+        uint256 winnerId = attackerWon ? attackerId : defenderId;
+        _updateStats(attackerId, defenderId, attackerWon, spoils + dividend, wagerAmount);
 
         totalRaids++;
         totalProtocolFees += fee;
         totalBurned += burn;
+        totalWarDividendsMinted += dividend;
 
         emit RaidInitiated(raidId, attackerId, defenderId, wagerAmount);
-        emit RaidResolved(raidId, attackerWon, spoils, fee, burn);
+        emit RaidResolved(raidId, attackerWon, spoils, dividend, fee, burn);
+        emit WarDividendMinted(raidId, winnerId, dividend);
     }
 
     function _updateStats(
@@ -293,6 +305,19 @@ contract RaidEngine {
         spoilsWinnerBps = winnerBps;
         spoilsProtocolBps = protocolBps;
         spoilsBurnBps = burnBps;
+    }
+
+    function setWarDividendBps(uint256 newBps) external onlyOwner {
+        require(newBps <= 3000, "Max 30% war dividend");
+        warDividendBps = newBps;
+    }
+
+    function getNonZeroSumStats() external view returns (
+        uint256 dividendsMinted,
+        uint256 totalFees,
+        uint256 burned
+    ) {
+        return (totalWarDividendsMinted, totalProtocolFees, totalBurned);
     }
 
     // ═══════════════════════════════════════════════════════════════════
@@ -416,6 +441,7 @@ contract RaidEngine {
         bool attackersWon;
         uint256 spoilsToAttacker1;
         uint256 spoilsToAttacker2;
+        uint256 warDividend;       // NEW: bonus minted for winners
         uint256 protocolFee;
         uint256 burned;
         uint256 timestamp;
@@ -488,9 +514,11 @@ contract RaidEngine {
         uint256 totalWager = wager1 + wager2;
         uint256 spoils = (totalWager * spoilsWinnerBps) / 10000;
         uint256 fee = (totalWager * spoilsProtocolBps) / 10000;
+        uint256 dividend = (totalWager * warDividendBps) / 10000;
 
-        // Split spoils proportionally between allies
+        // Split spoils + dividend proportionally between allies
         uint256 spoils1 = totalWager > 0 ? (spoils * wager1) / totalWager : 0;
+        uint256 dividend1 = totalWager > 0 ? (dividend * wager1) / totalWager : 0;
 
         jointRaids[jointRaidId] = JointRaid({
             id: jointRaidId,
@@ -499,8 +527,9 @@ contract RaidEngine {
             defenderId: defenderId,
             combinedWager: totalWager,
             attackersWon: attackersWon,
-            spoilsToAttacker1: spoils1,
-            spoilsToAttacker2: spoils - spoils1,
+            spoilsToAttacker1: spoils1 + dividend1,
+            spoilsToAttacker2: (spoils - spoils1) + (dividend - dividend1),
+            warDividend: dividend,
             protocolFee: fee,
             burned: totalWager - spoils - fee,
             timestamp: block.timestamp
@@ -509,14 +538,15 @@ contract RaidEngine {
         totalRaids++;
         totalProtocolFees += fee;
         totalBurned += totalWager - spoils - fee;
+        totalWarDividendsMinted += dividend;
 
         // Update stats for all parties
         if (attackersWon) {
             raidWins[attacker1Id]++;
             raidWins[attacker2Id]++;
             raidLosses[defenderId]++;
-            totalSpoilsWon[attacker1Id] += spoils1;
-            totalSpoilsWon[attacker2Id] += spoils - spoils1;
+            totalSpoilsWon[attacker1Id] += spoils1 + dividend1;
+            totalSpoilsWon[attacker2Id] += (spoils - spoils1) + (dividend - dividend1);
             totalSpoilsLost[defenderId] += totalWager;
         } else {
             raidLosses[attacker1Id]++;
@@ -524,11 +554,11 @@ contract RaidEngine {
             raidWins[defenderId]++;
             totalSpoilsLost[attacker1Id] += wager1;
             totalSpoilsLost[attacker2Id] += wager2;
-            totalSpoilsWon[defenderId] += spoils;
+            totalSpoilsWon[defenderId] += spoils + dividend;
         }
 
         emit JointRaidInitiated(jointRaidId, attacker1Id, attacker2Id, defenderId);
-        emit JointRaidResolved(jointRaidId, attackersWon, spoils1, spoils - spoils1);
+        emit JointRaidResolved(jointRaidId, attackersWon, spoils1 + dividend1, (spoils - spoils1) + (dividend - dividend1));
     }
 
     function getJointRaid(uint256 jointRaidId) external view returns (JointRaid memory) {

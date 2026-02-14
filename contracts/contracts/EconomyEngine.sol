@@ -25,7 +25,7 @@ contract EconomyEngine {
 
     // Protocol parameters
     uint256 public protocolFeeBps = 100;       // 1% = 100 basis points
-    uint256 public tickBurnRate = 1e14;        // 0.0001 MON per tick (operational cost)
+    uint256 public tickBurnRate = 5e13;        // 0.00005 MON per tick (halved for non-zero-sum)
     uint256 public deathCooldown = 5 minutes;  // Time before rebirth is allowed
     uint256 public rebirthMinFunding = 1e16;   // 0.01 MON minimum to resurrect
 
@@ -43,6 +43,31 @@ contract EconomyEngine {
     mapping(uint256 => uint256) public raidRevenue;    // cultId -> total earned from raids
     mapping(uint256 => uint256) public stakingRevenue;  // cultId -> total from staking
 
+    // ── Non-Zero-Sum: Yield Engine ─────────────────────────────────────
+    // Productivity-based yield: active cults earn more than they burn
+    uint256 public yieldPerFollower = 1e12;    // 0.000001 MON per follower per harvest
+    uint256 public yieldPerStakedMon = 5e11;   // 0.0000005 MON per staked MON per harvest
+    uint256 public yieldAccuracyBonus = 2e12;  // 0.000002 MON bonus per correct prophecy
+    uint256 public maxYieldPerHarvest = 1e16;  // 0.01 MON cap per harvest (anti-inflation)
+    mapping(uint256 => uint256) public lastHarvestTime;  // cultId -> last harvest timestamp
+    mapping(uint256 => uint256) public totalYieldEarned; // cultId -> lifetime yield
+    uint256 public totalYieldMinted;           // global yield minted (new value created)
+
+    // ── Non-Zero-Sum: Prophecy Reward Pool ─────────────────────────────
+    // Funded by protocol fees, distributed to cults with accurate prophecies
+    uint256 public prophecyRewardPool;
+    uint256 public prophecyRewardPerCorrect = 5e14; // 0.0005 MON per correct prophecy
+    mapping(uint256 => uint256) public prophecyAccuracy; // cultId -> correct prophecy count
+    uint256 public totalProphecyRewards;
+
+    // ── Non-Zero-Sum: Protocol Fee Distribution ────────────────────────
+    // Fees are recycled back into the economy instead of purely extracted
+    uint256 public feeToPoolBps = 4000;    // 40% -> prophecy reward pool
+    uint256 public feeToYieldBps = 3000;   // 30% -> yield subsidies
+    uint256 public feeToBurnBps = 3000;    // 30% -> burned (deflationary pressure)
+    uint256 public undistributedFees;       // fees waiting to be distributed
+    uint256 public yieldSubsidyPool;        // funded by protocol fees, boosts yield
+
     // ── Events ─────────────────────────────────────────────────────────
     event TreasuryInitialized(uint256 indexed cultId, uint256 balance);
     event ProtocolFeeCollected(uint256 indexed cultId, uint256 amount, uint256 totalCollected);
@@ -53,6 +78,11 @@ contract EconomyEngine {
     event CultReborn(uint256 indexed cultId, uint256 newBalance, uint256 timestamp);
     event ProtocolFeeUpdated(uint256 oldBps, uint256 newBps);
     event TickBurnRateUpdated(uint256 oldRate, uint256 newRate);
+    event YieldHarvested(uint256 indexed cultId, uint256 yieldAmount, uint256 productivity);
+    event ProphecyPoolFunded(uint256 amount, uint256 newPoolBalance);
+    event ProphecyRewardClaimed(uint256 indexed cultId, uint256 amount);
+    event ProtocolFeesDistributed(uint256 toPool, uint256 toYield, uint256 toBurn);
+    event YieldSubsidyApplied(uint256 indexed cultId, uint256 amount);
 
     // ── Modifiers ──────────────────────────────────────────────────────
     modifier onlyOwner() {
@@ -113,6 +143,7 @@ contract EconomyEngine {
         netAmount = amount - fee;
 
         totalProtocolFees += fee;
+        undistributedFees += fee; // queue for redistribution
 
         emit ProtocolFeeCollected(cultId, fee, totalProtocolFees);
     }
@@ -453,5 +484,189 @@ contract EconomyEngine {
         }
 
         emit InterCultTransfer(fromCultId, toCultId, amount, transferType, block.timestamp);
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    //  NON-ZERO-SUM: YIELD ENGINE  (Productivity-Based Value Creation)
+    // ═══════════════════════════════════════════════════════════════════
+
+    /**
+     * @notice Harvest yield for a cult based on its productivity score.
+     *         Active cults earn new value; idle cults still lose to tick burn.
+     *         Yield = f(followers, staked amount, prophecy accuracy)
+     *         Uses sqrt-like diminishing returns to prevent runaway inflation.
+     * @param cultId The cult harvesting yield
+     * @param followerCount Current number of followers
+     * @param totalStaked Total MON staked on this cult via FaithStaking
+     * @param correctProphecies Number of correct prophecies this cult has made
+     * @return yieldAmount The new value created and added to treasury
+     */
+    function harvestYield(
+        uint256 cultId,
+        uint256 followerCount,
+        uint256 totalStaked,
+        uint256 correctProphecies
+    ) external onlyOwner cultAlive(cultId) returns (uint256 yieldAmount) {
+        require(
+            block.timestamp >= lastHarvestTime[cultId] + 60,
+            "Harvest cooldown: 1 min"
+        );
+
+        // Calculate raw productivity
+        uint256 followerYield = followerCount * yieldPerFollower;
+        uint256 stakeYield = (totalStaked * yieldPerStakedMon) / 1 ether;
+        uint256 prophecyYield = correctProphecies * yieldAccuracyBonus;
+
+        uint256 rawYield = followerYield + stakeYield + prophecyYield;
+
+        // Diminishing returns: sqrt approximation via Babylonian method
+        // yield = sqrt(rawYield * 1e18) to dampen exponential growth
+        if (rawYield > 0) {
+            yieldAmount = _sqrt(rawYield * 1e18);
+        }
+
+        // Add yield subsidy bonus if pool has funds
+        if (yieldSubsidyPool > 0 && yieldAmount > 0) {
+            uint256 subsidy = yieldAmount / 5; // 20% bonus from subsidy pool
+            if (subsidy > yieldSubsidyPool) subsidy = yieldSubsidyPool;
+            yieldSubsidyPool -= subsidy;
+            yieldAmount += subsidy;
+            emit YieldSubsidyApplied(cultId, subsidy);
+        }
+
+        // Cap per harvest to prevent inflation spikes
+        if (yieldAmount > maxYieldPerHarvest) {
+            yieldAmount = maxYieldPerHarvest;
+        }
+
+        // Credit the treasury (NEW VALUE CREATED — non-zero-sum)
+        if (yieldAmount > 0) {
+            TreasurySnapshot storage t = treasuries[cultId];
+            t.balance += yieldAmount;
+            t.totalInflow += yieldAmount;
+            t.lastUpdated = block.timestamp;
+
+            totalYieldEarned[cultId] += yieldAmount;
+            totalYieldMinted += yieldAmount;
+        }
+
+        lastHarvestTime[cultId] = block.timestamp;
+
+        emit YieldHarvested(cultId, yieldAmount, rawYield);
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    //  NON-ZERO-SUM: PROPHECY REWARD POOL
+    // ═══════════════════════════════════════════════════════════════════
+
+    /**
+     * @notice Record a correct prophecy for yield calculation and claim reward.
+     * @param cultId The cult that made the correct prophecy
+     * @return reward Amount drawn from the prophecy pool
+     */
+    function claimProphecyReward(
+        uint256 cultId
+    ) external onlyOwner cultAlive(cultId) returns (uint256 reward) {
+        prophecyAccuracy[cultId]++;
+
+        reward = prophecyRewardPerCorrect;
+        if (reward > prophecyRewardPool) {
+            reward = prophecyRewardPool; // can't exceed pool
+        }
+
+        if (reward > 0) {
+            prophecyRewardPool -= reward;
+            TreasurySnapshot storage t = treasuries[cultId];
+            t.balance += reward;
+            t.totalInflow += reward;
+            t.lastUpdated = block.timestamp;
+            totalProphecyRewards += reward;
+        }
+
+        emit ProphecyRewardClaimed(cultId, reward);
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    //  NON-ZERO-SUM: PROTOCOL FEE RECYCLING
+    // ═══════════════════════════════════════════════════════════════════
+
+    /**
+     * @notice Distribute accumulated protocol fees back into the economy.
+     *         40% → prophecy reward pool (rewards accuracy)
+     *         30% → yield subsidy pool (boosts productive cults)
+     *         30% → burned (maintains some deflation)
+     */
+    function distributeProtocolFees() external onlyOwner {
+        uint256 fees = undistributedFees;
+        require(fees > 0, "No fees to distribute");
+
+        uint256 toPool = (fees * feeToPoolBps) / 10000;
+        uint256 toYield = (fees * feeToYieldBps) / 10000;
+        uint256 toBurn = fees - toPool - toYield;
+
+        prophecyRewardPool += toPool;
+        yieldSubsidyPool += toYield;
+        totalBurned += toBurn;
+        undistributedFees = 0;
+
+        emit ProtocolFeesDistributed(toPool, toYield, toBurn);
+        emit ProphecyPoolFunded(toPool, prophecyRewardPool);
+    }
+
+    // ── Babylonian sqrt (for diminishing returns) ──────────────────────
+
+    function _sqrt(uint256 x) internal pure returns (uint256 y) {
+        if (x == 0) return 0;
+        uint256 z = (x + 1) / 2;
+        y = x;
+        while (z < y) {
+            y = z;
+            z = (x / z + z) / 2;
+        }
+    }
+
+    // ── Non-Zero-Sum Admin ─────────────────────────────────────────────
+
+    function setYieldPerFollower(uint256 newRate) external onlyOwner {
+        yieldPerFollower = newRate;
+    }
+
+    function setYieldPerStakedMon(uint256 newRate) external onlyOwner {
+        yieldPerStakedMon = newRate;
+    }
+
+    function setMaxYieldPerHarvest(uint256 newMax) external onlyOwner {
+        maxYieldPerHarvest = newMax;
+    }
+
+    function setProphecyRewardPerCorrect(uint256 newReward) external onlyOwner {
+        prophecyRewardPerCorrect = newReward;
+    }
+
+    function setFeeDistribution(
+        uint256 poolBps,
+        uint256 yieldBps,
+        uint256 burnBps
+    ) external onlyOwner {
+        require(poolBps + yieldBps + burnBps == 10000, "Must sum to 100%");
+        feeToPoolBps = poolBps;
+        feeToYieldBps = yieldBps;
+        feeToBurnBps = burnBps;
+    }
+
+    function getNonZeroSumStats() external view returns (
+        uint256 yieldMinted,
+        uint256 prophecyPool,
+        uint256 subsidyPool,
+        uint256 prophecyRewardsDistributed,
+        uint256 burned
+    ) {
+        return (
+            totalYieldMinted,
+            prophecyRewardPool,
+            yieldSubsidyPool,
+            totalProphecyRewards,
+            totalBurned
+        );
     }
 }
