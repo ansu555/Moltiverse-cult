@@ -33,12 +33,9 @@ export class PersuasionService {
     systemPrompt: string,
     targetCultId: number,
     targetCultName: string,
-<<<<<<< HEAD
     cultTreasury: number = 1000,
     cultMembers: number = 5,
     targetMembers: number = 5,
-=======
->>>>>>> 8500a7ce99f53a5dac5261e06d78e2bbe93a8481
   ): Promise<PersuasionEvent> {
     const scripture = await this.llm.generateScripture(
       systemPrompt,
@@ -46,7 +43,6 @@ export class PersuasionService {
       `Why followers of "${targetCultName}" should abandon their false prophets and join the true faith of "${cultName}"`,
     );
 
-<<<<<<< HEAD
     // ── Design Doc §6.2: Persuasion Formula ─────────────────────
     // Conversions = floor(scriptureQuality × cultPower × charismaFactor / resistance)
     //
@@ -70,10 +66,6 @@ export class PersuasionService {
       `📜 Persuasion formula: quality=${scriptureQuality.toFixed(2)} power=${cultPower.toFixed(2)} ` +
       `charisma=${charismaFactor.toFixed(2)} resistance=${resistance.toFixed(2)} → ${followersConverted} converts`,
     );
-=======
-    // Simulated conversion - 1-3 followers per attempt
-    const followersConverted = Math.floor(Math.random() * 3) + 1;
->>>>>>> 8500a7ce99f53a5dac5261e06d78e2bbe93a8481
 
     // Record follower joins on-chain
     let recordedOnChain = false;
@@ -103,12 +95,8 @@ export class PersuasionService {
 
     this.events.push(event);
     log.info(
-<<<<<<< HEAD
-      `${cultName} converted ${followersConverted} followers from ${targetCultName}${recordedOnChain ? " (on-chain)" : " (off-chain)"
-=======
       `${cultName} converted ${followersConverted} followers from ${targetCultName}${
         recordedOnChain ? " (on-chain)" : " (off-chain)"
->>>>>>> 8500a7ce99f53a5dac5261e06d78e2bbe93a8481
       }`,
     );
 

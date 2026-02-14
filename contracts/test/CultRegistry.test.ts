@@ -103,7 +103,6 @@ describe("CultRegistry", function () {
       expect(all.length).to.equal(2);
     });
   });
-<<<<<<< HEAD
 
   describe("Agent Identity", function () {
     it("should register an agent identity", async function () {
@@ -146,6 +145,4 @@ describe("CultRegistry", function () {
       expect(await registry.minimumStake()).to.equal(ethers.parseEther("0.05"));
     });
   });
-=======
->>>>>>> 8500a7ce99f53a5dac5261e06d78e2bbe93a8481
 });

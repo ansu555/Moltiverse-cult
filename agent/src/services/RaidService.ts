@@ -1,10 +1,7 @@
 import { LLMService, AgentDecision } from "./LLMService.js";
 import { CultData } from "../chain/ContractService.js";
 import { createLogger } from "../utils/logger.js";
-<<<<<<< HEAD
 import { saveRaid, saveSpoilsVote, updateSpoilsVote } from "./InsForgeService.js";
-=======
->>>>>>> 8500a7ce99f53a5dac5261e06d78e2bbe93a8481
 
 const log = createLogger("RaidService");
 
@@ -18,7 +15,6 @@ export interface RaidEvent {
   attackerWon: boolean;
   timestamp: number;
   reason: string;
-<<<<<<< HEAD
   isJointRaid?: boolean;
   allyId?: number;
   allyName?: string;
@@ -36,19 +32,13 @@ export interface SpoilsVote {
   result?: "treasury" | "stakers" | "reinvest";
   createdAt: number;
   endsAt: number;
-=======
->>>>>>> 8500a7ce99f53a5dac5261e06d78e2bbe93a8481
 }
 
 export class RaidService {
   private raids: RaidEvent[] = [];
-<<<<<<< HEAD
   private spoilsVotes: SpoilsVote[] = [];
   private nextId = 0;
   private nextSpoilsVoteId = 0;
-=======
-  private nextId = 0;
->>>>>>> 8500a7ce99f53a5dac5261e06d78e2bbe93a8481
   private cooldowns: Map<string, number> = new Map(); // "attackerId-defenderId" -> timestamp
   private cooldownDuration = 120000; // 2 minutes between same-pair raids
 
@@ -91,7 +81,6 @@ export class RaidService {
     wagerAmount: bigint,
     reason: string
   ): RaidEvent {
-<<<<<<< HEAD
     // Design doc power formula: Power = (Treasury × 0.6) + (Members × 100 × 0.4)
     // Plus ±20% randomness variance to keep raids exciting
     const attackerPower =
@@ -104,24 +93,6 @@ export class RaidService {
       defender.followerCount * 100 * 0.4;
     // Defender gets slight home advantage (+5%)
     const defenderScore = defenderPower * (0.85 + Math.random() * 0.4);
-=======
-    // Game theory resolution:
-    // - Higher treasury = slight advantage (wealth = power)
-    // - More followers = slight advantage (numbers matter)
-    // - More raid wins = slight advantage (experience)
-    // - Random factor keeps it exciting
-    const attackerScore =
-      Number(attacker.treasuryBalance) * 0.3 +
-      attacker.followerCount * 100 +
-      attacker.raidWins * 50 +
-      Math.random() * 1000;
-
-    const defenderScore =
-      Number(defender.treasuryBalance) * 0.3 +
-      defender.followerCount * 100 +
-      defender.raidWins * 50 +
-      Math.random() * 1000;
->>>>>>> 8500a7ce99f53a5dac5261e06d78e2bbe93a8481
 
     const attackerWon = attackerScore > defenderScore;
 
@@ -140,7 +111,6 @@ export class RaidService {
     this.raids.push(raid);
     this.cooldowns.set(`${attacker.id}-${defender.id}`, Date.now());
 
-<<<<<<< HEAD
     // Persist to InsForge (fire-and-forget)
     saveRaid({
       attacker_id: attacker.id,
@@ -153,8 +123,6 @@ export class RaidService {
       timestamp: raid.timestamp,
     }).catch(() => {});
 
-=======
->>>>>>> 8500a7ce99f53a5dac5261e06d78e2bbe93a8481
     log.info(
       `Raid resolved: ${attacker.name} ${attackerWon ? "defeated" : "lost to"} ${defender.name} for ${wagerAmount} MON`
     );
@@ -179,7 +147,6 @@ export class RaidService {
   getLastRaid(): RaidEvent | null {
     return this.raids.length > 0 ? this.raids[this.raids.length - 1] : null;
   }
-<<<<<<< HEAD
 
   // ── Spoils Distribution Vote (Design Doc §7.5) ──────────────────
 
@@ -305,6 +272,4 @@ export class RaidService {
 
     return raid;
   }
-=======
->>>>>>> 8500a7ce99f53a5dac5261e06d78e2bbe93a8481
 }

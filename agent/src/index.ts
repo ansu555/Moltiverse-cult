@@ -13,7 +13,6 @@ async function main() {
   log.info(`RPC: ${config.rpcUrl}`);
   log.info(`Registry: ${config.cultRegistryAddress}`);
 
-<<<<<<< HEAD
   // Initialize the agent orchestrator first (loads agents from InsForge DB)
   const orchestrator = new AgentOrchestrator();
   await orchestrator.bootstrap();
@@ -22,16 +21,6 @@ async function main() {
   const apiPort = parseInt(process.env.API_PORT || "3001");
   startApiServer(apiPort, orchestrator);
 
-=======
-  // Start the Express API server for frontend
-  const apiPort = parseInt(process.env.API_PORT || "3001");
-  startApiServer(apiPort);
-
-  // Initialize and start the agent orchestrator
-  const orchestrator = new AgentOrchestrator();
-  await orchestrator.bootstrap();
-
->>>>>>> 8500a7ce99f53a5dac5261e06d78e2bbe93a8481
   // Sync agent state into the API store every 3 seconds
   setInterval(() => {
     syncStateFromOrchestrator(orchestrator);
@@ -53,11 +42,7 @@ async function main() {
   });
 
   // Keep process alive
-<<<<<<< HEAD
   await new Promise(() => { });
-=======
-  await new Promise(() => {});
->>>>>>> 8500a7ce99f53a5dac5261e06d78e2bbe93a8481
 }
 
 function syncStateFromOrchestrator(orchestrator: AgentOrchestrator) {
@@ -66,13 +51,9 @@ function syncStateFromOrchestrator(orchestrator: AgentOrchestrator) {
   stateStore.agents = agentStates.map((s) => ({
     cultId: s.cultId,
     name: s.personality.name,
-<<<<<<< HEAD
     status: s.dead ? "dead" as const : s.running ? "running" as const : "stopped" as const,
     dead: s.dead,
     deathCause: s.deathCause,
-=======
-    status: s.running ? "running" : "stopped",
->>>>>>> 8500a7ce99f53a5dac5261e06d78e2bbe93a8481
     lastAction: s.lastAction,
     lastActionTime: s.lastActionTime,
     totalProphecies: s.propheciesGenerated,
@@ -97,11 +78,7 @@ function syncStateFromOrchestrator(orchestrator: AgentOrchestrator) {
         createdAt: c.createdAt * 1000,
       }));
     })
-<<<<<<< HEAD
     .catch(() => { });
-=======
-    .catch(() => {});
->>>>>>> 8500a7ce99f53a5dac5261e06d78e2bbe93a8481
 
   // Sync prophecies from ProphecyService
   const allProphecies = orchestrator.prophecyService.getAllProphecies();
@@ -131,7 +108,6 @@ function syncStateFromOrchestrator(orchestrator: AgentOrchestrator) {
     scripture: r.reason,
     createdAt: r.timestamp,
   }));
-<<<<<<< HEAD
 
   // Sync governance proposals
   const allProposals = orchestrator.governanceService.getAllProposals();
@@ -147,8 +123,6 @@ function syncStateFromOrchestrator(orchestrator: AgentOrchestrator) {
   // Sync communication and evolution data
   stateStore.messages = orchestrator.communicationService.getAllMessages();
   stateStore.evolutionTraits = orchestrator.evolutionService.getAllTraits();
-=======
->>>>>>> 8500a7ce99f53a5dac5261e06d78e2bbe93a8481
 }
 
 main().catch((err) => {

@@ -1,12 +1,9 @@
 import { LLMService } from "./LLMService.js";
 import { MarketService } from "./MarketService.js";
 import { createLogger } from "../utils/logger.js";
-<<<<<<< HEAD
 import {
   saveProphecy, updateProphecy, loadProphecies,
 } from "./InsForgeService.js";
-=======
->>>>>>> 8500a7ce99f53a5dac5261e06d78e2bbe93a8481
 
 const log = createLogger("ProphecyService");
 
@@ -30,11 +27,8 @@ export class ProphecyService {
   private market: MarketService;
   private prophecies: Prophecy[] = [];
   private nextId = 0;
-<<<<<<< HEAD
   /** Maps local prophecy id → InsForge DB id for updates */
   private prophecyDbIds: Map<number, number> = new Map();
-=======
->>>>>>> 8500a7ce99f53a5dac5261e06d78e2bbe93a8481
 
   constructor(llm: LLMService, market: MarketService) {
     this.llm = llm;
@@ -76,7 +70,6 @@ export class ProphecyService {
         confidence * 100
       ).toFixed(0)}%): ${prediction.slice(0, 60)}...`,
     );
-<<<<<<< HEAD
 
     // Persist to InsForge DB (fire-and-forget)
     saveProphecy({
@@ -92,8 +85,6 @@ export class ProphecyService {
       if (dbId > 0) this.prophecyDbIds.set(prophecy.id, dbId);
     }).catch(() => {});
 
-=======
->>>>>>> 8500a7ce99f53a5dac5261e06d78e2bbe93a8481
     return prophecy;
   }
 
@@ -133,7 +124,6 @@ export class ProphecyService {
 
     prophecy.resolved = true;
     prophecy.correct = correct;
-<<<<<<< HEAD
 
     // Persist resolution to InsForge DB (fire-and-forget)
     const dbId = this.prophecyDbIds.get(prophecyId);
@@ -145,8 +135,6 @@ export class ProphecyService {
       }).catch(() => {});
     }
 
-=======
->>>>>>> 8500a7ce99f53a5dac5261e06d78e2bbe93a8481
     return correct;
   }
 
@@ -233,7 +221,6 @@ export class ProphecyService {
   getAllProphecies(): Prophecy[] {
     return [...this.prophecies].reverse();
   }
-<<<<<<< HEAD
 
   /**
    * Hydrate prophecy state from InsForge DB on startup (crash recovery).
@@ -264,6 +251,4 @@ export class ProphecyService {
       log.warn(`Prophecy hydration failed for cult ${cultId}: ${err.message}`);
     }
   }
-=======
->>>>>>> 8500a7ce99f53a5dac5261e06d78e2bbe93a8481
 }

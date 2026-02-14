@@ -3,7 +3,6 @@ import { config } from "../config.js";
 import { ContractService } from "../chain/ContractService.js";
 import { NadFunService } from "../chain/NadFunService.js";
 import { TransactionQueue } from "../chain/TransactionQueue.js";
-<<<<<<< HEAD
 import { LLMService, LLMConfig } from "../services/LLMService.js";
 import { ProphecyService } from "../services/ProphecyService.js";
 import { RaidService } from "../services/RaidService.js";
@@ -15,43 +14,27 @@ import { AllianceService } from "../services/AllianceService.js";
 import { DefectionService } from "../services/DefectionService.js";
 import { CommunicationService } from "../services/CommunicationService.js";
 import { EvolutionService } from "../services/EvolutionService.js";
-=======
-import { LLMService } from "../services/LLMService.js";
-import { ProphecyService } from "../services/ProphecyService.js";
-import { RaidService } from "../services/RaidService.js";
-import { PersuasionService } from "../services/PersuasionService.js";
->>>>>>> 8500a7ce99f53a5dac5261e06d78e2bbe93a8481
 import { MarketService } from "../services/MarketService.js";
 import { CultAgent, AgentState } from "./CultAgent.js";
 import { loadPersonalities, Personality } from "./AgentPersonality.js";
 import { createLogger } from "../utils/logger.js";
-<<<<<<< HEAD
 import {
   loadAllAgents, createAgent, updateAgentState, loadAgentMessages,
   loadRaids, loadProphecies, loadAllAlliances, loadBetrayals,
   loadDefections, loadMemes, loadTokenTransfers, loadSpoilsVotes,
   AgentRow, CreateAgentInput,
 } from "../services/InsForgeService.js";
-=======
->>>>>>> 8500a7ce99f53a5dac5261e06d78e2bbe93a8481
 
 const log = createLogger("Orchestrator");
 
 export class AgentOrchestrator {
   private agents: Map<number, CultAgent> = new Map();
-<<<<<<< HEAD
   /** Map agent DB id → CultAgent for quick lookup */
   private agentsByDbId: Map<number, CultAgent> = new Map();
   /** Store agent DB rows for API access */
   public agentRows: Map<number, AgentRow> = new Map();
 
   private nadFunService: NadFunService;
-=======
-  private contractService: ContractService;
-  private nadFunService: NadFunService;
-  private txQueue: TransactionQueue;
-  private llm: LLMService;
->>>>>>> 8500a7ce99f53a5dac5261e06d78e2bbe93a8481
   private market: MarketService;
 
   // Token created on nad.fun
@@ -61,7 +44,6 @@ export class AgentOrchestrator {
   public prophecyService: ProphecyService;
   public raidService: RaidService;
   public persuasionService: PersuasionService;
-<<<<<<< HEAD
   public lifeDeathService: LifeDeathService;
   public governanceService: GovernanceService;
   public memoryService: MemoryService;
@@ -233,84 +215,7 @@ export class AgentOrchestrator {
     });
 
     return { agent, row };
-=======
 
-  constructor() {
-    this.contractService = new ContractService();
-    this.nadFunService = new NadFunService();
-    this.txQueue = new TransactionQueue();
-    this.llm = new LLMService();
-    this.market = new MarketService();
-    this.prophecyService = new ProphecyService(this.llm, this.market);
-    this.raidService = new RaidService();
-    this.persuasionService = new PersuasionService(
-      this.llm,
-      this.contractService,
-    );
-  }
-
-  async bootstrap(): Promise<void> {
-    log.info("Bootstrapping AgentCult orchestrator...");
-    log.info(`Wallet: ${this.contractService.address}`);
-
-    const balance = await this.contractService.getBalance();
-    log.info(`Balance: ${ethers.formatEther(balance)} MON`);
-
-    if (balance === 0n) {
-      log.warn(
-        "Wallet has 0 MON! Agents will run but cannot submit on-chain transactions.",
-      );
-      log.warn("Get testnet MON from https://faucet.monad.xyz");
-    }
-
-    // Create $CULT token on nad.fun if not already configured
-    await this.ensureCultToken();
-
-    const personalities = loadPersonalities();
-    log.info(`Loaded ${personalities.length} cult personalities`);
-
-    // Check if cults already registered
-    const existingCults = await this.contractService
-      .getTotalCults()
-      .catch(() => 0);
-    log.info(`Existing cults on-chain: ${existingCults}`);
-
-    for (let i = 0; i < personalities.length; i++) {
-      const personality = personalities[i];
-      const agent = new CultAgent(
-        personality,
-        this.contractService,
-        this.llm,
-        this.prophecyService,
-        this.raidService,
-        this.persuasionService,
-        this.market,
-      );
-
-      if (i < existingCults) {
-        // Reuse existing cult
-        agent.cultId = i;
-        agent.state.cultId = i;
-        log.info(`Reusing existing cult ${i}: ${personality.name}`);
-      } else {
-        // Register new cult with the $CULT token address
-        try {
-          await agent.initialize(this.cultTokenAddress || ethers.ZeroAddress);
-        } catch (error: any) {
-          log.error(
-            `Failed to initialize ${personality.name}: ${error.message}`,
-          );
-          // Still add the agent - it can run in degraded mode
-          agent.cultId = i;
-          agent.state.cultId = i;
-        }
-      }
-
-      this.agents.set(agent.cultId, agent);
-    }
-
-    log.info(`${this.agents.size} agents ready`);
->>>>>>> 8500a7ce99f53a5dac5261e06d78e2bbe93a8481
   }
 
   private async ensureCultToken(): Promise<void> {
@@ -321,7 +226,6 @@ export class AgentOrchestrator {
     ) {
       this.cultTokenAddress = config.cultTokenAddress;
       log.info(`Using configured $CULT token: ${this.cultTokenAddress}`);
-<<<<<<< HEAD
       return;
     }
 
@@ -331,48 +235,12 @@ export class AgentOrchestrator {
 
     log.info("No $CULT token configured, creating on nad.fun...");
     try {
-=======
-
-      // Check token progress on nad.fun
-      try {
-        const progress = await this.nadFunService.getTokenProgress(
-          this.cultTokenAddress,
-        );
-        const graduated = await this.nadFunService.isGraduated(
-          this.cultTokenAddress,
-        );
-        log.info(`Token progress: ${progress / 100}%, graduated: ${graduated}`);
-      } catch {
-        log.warn(
-          "Could not check token status on nad.fun (may not be on bonding curve)",
-        );
-      }
-      return;
-    }
-
-    // Create a new $CULT token on nad.fun
-    log.info("No $CULT token configured, creating on nad.fun...");
-    try {
-      const balance = await this.contractService.getBalance();
-      if (balance < ethers.parseEther("0.02")) {
-        log.warn(
-          "Insufficient balance to create token on nad.fun (need ~0.02 MON). Skipping token creation.",
-        );
-        return;
-      }
-
->>>>>>> 8500a7ce99f53a5dac5261e06d78e2bbe93a8481
       const { tokenAddress, poolAddress } =
         await this.nadFunService.createToken(
           "AgentCult",
           "CULT",
-<<<<<<< HEAD
           "ipfs://agentcult-emergent-religious-economies",
           ethers.parseEther("0.01"),
-=======
-          "ipfs://agentcult-emergent-religious-economies", // metadata URI
-          ethers.parseEther("0.01"), // initial buy
->>>>>>> 8500a7ce99f53a5dac5261e06d78e2bbe93a8481
         );
 
       if (tokenAddress) {
@@ -380,13 +248,6 @@ export class AgentOrchestrator {
         log.info(`$CULT token created at: ${tokenAddress}`);
         log.info(`Pool address: ${poolAddress}`);
         log.info(`Set CULT_TOKEN_ADDRESS=${tokenAddress} in your .env file`);
-<<<<<<< HEAD
-=======
-      } else {
-        log.warn(
-          "Token creation succeeded but could not parse address. Check tx on explorer.",
-        );
->>>>>>> 8500a7ce99f53a5dac5261e06d78e2bbe93a8481
       }
     } catch (error: any) {
       log.warn(
@@ -432,7 +293,6 @@ export class AgentOrchestrator {
     return this.agents.get(cultId);
   }
 
-<<<<<<< HEAD
   getAgentByDbId(dbId: number): CultAgent | undefined {
     return this.agentsByDbId.get(dbId);
   }
@@ -458,19 +318,6 @@ export class AgentOrchestrator {
     const readService = new ContractService();
     const totalCults = await readService.getTotalCults().catch(() => 0);
     const totalRaids = await readService.getTotalRaids().catch(() => 0);
-=======
-  async getCultsFromChain() {
-    return this.contractService.getAllCults();
-  }
-
-  async getStats() {
-    const totalCults = await this.contractService
-      .getTotalCults()
-      .catch(() => 0);
-    const totalRaids = await this.contractService
-      .getTotalRaids()
-      .catch(() => 0);
->>>>>>> 8500a7ce99f53a5dac5261e06d78e2bbe93a8481
     return {
       totalCults,
       totalRaids,
@@ -478,10 +325,7 @@ export class AgentOrchestrator {
       activeAgents: Array.from(this.agents.values()).filter(
         (a) => a.state.running,
       ).length,
-<<<<<<< HEAD
       totalAgentsInDb: this.agentRows.size,
-=======
->>>>>>> 8500a7ce99f53a5dac5261e06d78e2bbe93a8481
     };
   }
 }

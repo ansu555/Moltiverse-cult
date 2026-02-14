@@ -1,12 +1,7 @@
 # AgentCult: Progress & Implementation Tracker
 
-<<<<<<< HEAD
 > **Last Updated**: February 14, 2026 (post Batches 1-7 — Final gap closure)
 > **Status**: ~100% complete — All core + design doc systems implemented
-=======
-> **Last Updated**: February 13, 2026
-> **Status**: ~97% complete — All code implemented, needs deployment & demo
->>>>>>> 8500a7ce99f53a5dac5261e06d78e2bbe93a8481
 > **Deadline**: February 15, 2026 23:59 ET (target demo: Feb 14)
 
 ---
@@ -43,7 +38,6 @@ Frontend (Next.js 16 + Tailwind) ──REST/SSE──▶ Agent API (Express :300
 
 ---
 
-<<<<<<< HEAD
 ## Implementation Status vs System Design
 
 ### ✅ COMPLETED
@@ -107,37 +101,6 @@ Frontend (Next.js 16 + Tailwind) ──REST/SSE──▶ Agent API (Express :300
 - [x] **Route: communication** — GET messages, GET by cult, GET evolution traits
 - [x] **Route: sse** — Server-Sent Events with proper headers, client tracking, disconnect cleanup
 - [x] **State sync** — Orchestrator state → API stateStore every 3 seconds with real confidence values
-=======
-## Implementation Status
-
-### ✅ COMPLETED
-
-#### Smart Contracts
-
-- [x] **CultRegistry.sol** (215 lines) — Cult registration, treasury management, follower tracking, raid recording, prophecy creation/resolution, leaderboard queries
-- [x] **FaithStaking.sol** (165 lines) — Stake MON to show faith, earn faith points, 1% raid fee distribution to winning cult stakers
-- [x] **Hardhat config** — Monad testnet (chain 10143) + mainnet (chain 143) configured
-- [x] **Deploy script** — `scripts/deploy.ts` (deploys both CultRegistry + FaithStaking)
-- [x] **Tests** — 7/7 passing (registration, followers, raids, prophecies, access control, getAllCults)
-
-#### Agent Backend (Node.js/TypeScript)
-
-- [x] **CultAgent.ts** (285 lines) — Full autonomous loop: observe→think→act→evolve with 30-60s cycles, all on-chain writes use TransactionQueue
-- [x] **AgentOrchestrator.ts** — Manages 3 concurrent agents, staggered start, $CULT token creation via nad.fun on bootstrap
-- [x] **AgentPersonality.ts** — Loads 3 cult personalities from JSON
-- [x] **ContractService.ts** — Full ethers.js wrapper for CultRegistry (register, deposit, joinCult, raid, prophecy, resolve)
-- [x] **NadFunService.ts** — Creates $CULT token on nad.fun bonding curve, queries token progress/graduation, market data via REST
-- [x] **TransactionQueue.ts** — Serial transaction queue with retry logic (3 attempts, exponential backoff), used by all agents
-- [x] **LLMService.ts** (147 lines) — Grok/xAI via OpenAI SDK with `generateProphecy()`, `decideAction()`, `generateScripture()` + fallback responses
-- [x] **MarketService.ts** (70 lines) — CoinGecko price feed with caching + simulated fallback
-- [x] **ProphecyService.ts** — In-memory prophecy store, generation via LLM, real market-based resolution (bullish/bearish prediction vs ETH price movement)
-- [x] **RaidService.ts** (123 lines) — Game-theory scoring, 2-min cooldown per pair, wager calculation
-- [x] **PersuasionService.ts** — LLM scripture generation + follower conversion with on-chain joinCult() recording
-- [x] **Express API server** — Health, stats, cults, prophecies, raids, agents (with working deploy endpoint), SSE endpoints
-- [x] **State sync** — Orchestrator state → API stateStore every 3 seconds with real confidence values
-- [x] **Config** — All env vars with sensible defaults
-- [x] **Logger + sleep utils**
->>>>>>> 8500a7ce99f53a5dac5261e06d78e2bbe93a8481
 
 #### Frontend (Next.js 16 + Tailwind)
 
@@ -145,7 +108,6 @@ Frontend (Next.js 16 + Tailwind) ──REST/SSE──▶ Agent API (Express :300
 - [x] **Leaderboard** (`/cults`) — Full table ranked by treasury with token address, followers, W/L
 - [x] **Cult Detail** (`/cults/[id]`) — Stats, prophecy history, raid history
 - [x] **Raid Arena** (`/arena`) — Animated VS battle visualization with auto-cycling, click-to-replay, scripture
-<<<<<<< HEAD
 - [x] **Governance** (`/governance`) — Budget proposals (Raid/Growth/Defense/Reserve), voting progress bars, time-ago display
 - [x] **Prophecy Feed** (`/prophecies`) — Stats bar, scrolling feed with AWAITING/FULFILLED/FAILED badges
 - [x] **Alliances** (`/alliances`) — Stats cards, active alliances with countdown timers, betrayal/defection history
@@ -154,29 +116,16 @@ Frontend (Next.js 16 + Tailwind) ──REST/SSE──▶ Agent API (Express :300
 - [x] **AgentDeployForm** — Deploy new cult agents from the dashboard, wired to working API endpoint
 - [x] **StakingPanel** — **Real wallet integration** (MetaMask → FaithStaking contract), faith points tracking, pool stats display, transaction hash links, Monad explorer integration, simulated fallback when no wallet
 - [x] **TreasuryChart** — Bar chart metrics + **time-series line chart** (60-snapshot rolling window), trend indicators (▲/▼), mode switching (treasury/followers/power), SVG mini-charts with gradient fill
-=======
-- [x] **Prophecy Feed** (`/prophecies`) — Stats bar, scrolling feed with AWAITING/FULFILLED/FAILED badges
-- [x] **Navbar** — Sticky, active state, Monad testnet status badge, wallet connect button
-- [x] **WalletButton** — Connect MetaMask, auto-switch to Monad testnet, account/chain change listeners
-- [x] **AgentDeployForm** — Deploy new cult agents from the dashboard, wired to working API endpoint
->>>>>>> 8500a7ce99f53a5dac5261e06d78e2bbe93a8481
 - [x] **Dark occult theme** — Purple/red/gold glow effects, animations, scrollbar styling
 - [x] **usePolling hook** — Generic 5s polling for all data
 - [x] **useWallet hook** — EIP-1193 wallet connection with Monad testnet auto-switch
 - [x] **API client** — Type-safe fetch wrapper with all endpoints
-<<<<<<< HEAD
 - [x] **Constants** — `API_BASE`, `MONAD_CHAIN_ID`, `CULT_COLORS`, `CULT_ICONS` maps
-=======
->>>>>>> 8500a7ce99f53a5dac5261e06d78e2bbe93a8481
 
 #### Infrastructure
 
 - [x] **Monorepo** — npm workspaces (contracts, agent, frontend)
-<<<<<<< HEAD
 - [x] **Git** — Initialized, committed
-=======
-- [x] **Git** — Initialized, initial commit with 37 files
->>>>>>> 8500a7ce99f53a5dac5261e06d78e2bbe93a8481
 - [x] **README.md** — Comprehensive docs with architecture, setup, API reference
 - [x] **.env.example** — All required env vars documented
 - [x] **.gitignore** — node_modules, .env, artifacts, .next, etc.
@@ -191,7 +140,6 @@ Frontend (Next.js 16 + Tailwind) ──REST/SSE──▶ Agent API (Express :300
 
 ---
 
-<<<<<<< HEAD
 ### ✅ vs System Design — Feature Coverage
 
 Mapping implemented features against the System Design Document (§1–§16):
@@ -249,24 +197,11 @@ Mapping implemented features against the System Design Document (§1–§16):
 | **Mobile push alerts** | ❌ Not impl | Stretch goal. |
 | **Twitter/Discord integration** | ❌ Not impl | No social posting from agents. |
 | **Pyth Network oracle** | ❌ Not impl | Prophecy resolution uses simulated market data, not real oracle. |
-=======
-### ⚠️ REMAINING GAPS (Cosmetic / Stretch)
-
-| Component                             | Status   | Notes                                                                                         |
-| ------------------------------------- | -------- | --------------------------------------------------------------------------------------------- |
-| **Agent prompt mutation/evolution**   | NOT IMPL | Agents don't mutate prompts based on wins. Static personalities.                              |
-| **x402 bribe streaming**              | NOT IMPL | Stretch goal. Not implemented.                                                                |
-| **Mobile push alerts**                | NOT IMPL | Stretch goal. Not implemented.                                                                |
-| **Cult growth curve analytics**       | NOT IMPL | No TreasuryChart component. Could add recharts time-series.                                   |
-| **Twitter/Discord integration**       | NOT IMPL | No social posting from agents.                                                                |
-| **FaithStaking frontend integration** | PARTIAL  | Contract exists, but no frontend UI for staking. Could add staking panel to cult detail page. |
->>>>>>> 8500a7ce99f53a5dac5261e06d78e2bbe93a8481
 
 ---
 
 ## Compilation & Build Status
 
-<<<<<<< HEAD
 | Package     | Status                       | Command                                                   |
 | ----------- | ---------------------------- | --------------------------------------------------------- |
 | `contracts` | ✅ Compiles, 89 tests pass   | `cd contracts && npx hardhat compile && npx hardhat test` |
@@ -274,13 +209,6 @@ Mapping implemented features against the System Design Document (§1–§16):
 | `frontend`  | ✅ Builds clean, 9/9 routes  | `cd frontend && npx next build`                           |
 
 > All verified post Batch 7 (final gap closure). Contracts: 3 files recompiled. Agent: 0 errors. Frontend: 9/9 pages generated.
-=======
-| Package     | Status                      | Command                                                   |
-| ----------- | --------------------------- | --------------------------------------------------------- |
-| `contracts` | ✅ Compiles, 7/7 tests pass | `cd contracts && npx hardhat compile && npx hardhat test` |
-| `agent`     | ✅ Zero TypeScript errors   | `cd agent && npx tsc --noEmit`                            |
-| `frontend`  | ✅ Builds clean, all routes | `cd frontend && npx next build`                           |
->>>>>>> 8500a7ce99f53a5dac5261e06d78e2bbe93a8481
 
 ---
 
@@ -317,12 +245,8 @@ NEXT_PUBLIC_API_URL=   # defaults to http://localhost:3001
    ```bash
    # Fill .env with PRIVATE_KEY, get MON from faucet
    cd contracts && npx hardhat run scripts/deploy.ts --network monadTestnet
-<<<<<<< HEAD
    # Deploys: CultRegistry → FaithStaking → GovernanceEngine → SocialGraph → EconomyEngine
    # Copy all 5 deployed addresses to .env
-=======
-   # Copy deployed addresses to .env: CULT_REGISTRY_ADDRESS + FAITH_STAKING_ADDRESS
->>>>>>> 8500a7ce99f53a5dac5261e06d78e2bbe93a8481
    ```
 
 2. **Test end-to-end with real xAI API key**
@@ -342,7 +266,6 @@ NEXT_PUBLIC_API_URL=   # defaults to http://localhost:3001
 
 4. **Record 3-minute demo video** — Show agents running, prophecies appearing, raid animation
 
-<<<<<<< HEAD
 ### 🟡 P1 — High-impact polish (if time permits)
 
 5. ~~**FaithStaking frontend UI**~~ ✅ Done — StakingPanel.tsx with real wallet integration
@@ -358,13 +281,6 @@ NEXT_PUBLIC_API_URL=   # defaults to http://localhost:3001
 12. ~~**Selective balance visibility**~~ ✅ Done
 13. ~~**Belief evolution**~~ ✅ Done — zealotry, mysticism, pragmatism, adaptability
 14. **Pyth Network oracle** — Replace simulated prophecy resolution with real price oracle
-=======
-### 🟢 P2 — Nice-to-have polish (stretch goals)
-
-5. **TreasuryChart component** — Chart.js/recharts time-series of treasury over raids
-6. **FaithStaking frontend UI** — Staking panel on cult detail page
-7. **Agent prompt mutation** — Evolve personality based on win/loss record
->>>>>>> 8500a7ce99f53a5dac5261e06d78e2bbe93a8481
 
 ---
 
@@ -372,16 +288,11 @@ NEXT_PUBLIC_API_URL=   # defaults to http://localhost:3001
 
 ```
 Moltiverse-cult/
-<<<<<<< HEAD
 ├── package.json                    # Workspace root (npm workspaces)
-=======
-├── package.json                    # Workspace root
->>>>>>> 8500a7ce99f53a5dac5261e06d78e2bbe93a8481
 ├── .env.example
 ├── .gitignore
 ├── README.md
 ├── Progress.md                     # THIS FILE
-<<<<<<< HEAD
 ├── AgentCult_System_Design.md      # Full system design (2858 lines)
 ├── contracts/
 │   ├── package.json
@@ -445,74 +356,18 @@ Moltiverse-cult/
 │           └── sleep.ts             # ✅ sleep() + randomDelay()
 └── frontend/
     ├── package.json                 # Next.js 16 + React 19 + Tailwind v4
-=======
-├── contracts/
-│   ├── package.json
-│   ├── hardhat.config.ts          # Monad testnet/mainnet
-│   ├── tsconfig.json
-│   ├── contracts/
-│   │   ├── CultRegistry.sol       # ✅ Main contract (215 lines)
-│   │   ├── FaithStaking.sol       # ✅ Staking contract (165 lines)
-│   │   └── interfaces/
-│   ├── scripts/
-│   │   └── deploy.ts              # ✅ Deploy script
-│   └── test/
-│       └── CultRegistry.test.ts   # ✅ 7 tests
-├── agent/
-│   ├── package.json
-│   ├── tsconfig.json
-│   ├── data/
-│   │   └── personalities.json     # ✅ 3 cults
-│   └── src/
-│       ├── index.ts               # ✅ Entrypoint + state sync
-│       ├── config.ts              # ✅ Config + ABI
-│       ├── core/
-│       │   ├── AgentOrchestrator.ts  # ✅ Multi-agent manager
-│       │   ├── AgentPersonality.ts   # ✅ Personality loader
-│       │   └── CultAgent.ts         # ✅ Autonomous loop (285 lines)
-│       ├── services/
-│       │   ├── LLMService.ts        # ✅ Grok/xAI + fallbacks
-│       │   ├── MarketService.ts     # ✅ CoinGecko + fallback
-│       │   ├── ProphecyService.ts   # ✅ Real market-based resolution
-│       │   ├── RaidService.ts       # ✅ Game-theory scoring
-│       │   └── PersuasionService.ts # ✅ On-chain follower recording
-│       ├── chain/
-│       │   ├── ContractService.ts   # ✅ Full CultRegistry wrapper + joinCult
-│       │   ├── NadFunService.ts     # ✅ Token creation + progress tracking
-│       │   └── TransactionQueue.ts  # ✅ Serial queue with 3x retry
-│       ├── api/
-│       │   ├── server.ts            # ✅ Express + state store
-│       │   └── routes/
-│       │       ├── agents.ts         # ✅ With working deploy endpoint
-│       │       ├── cults.ts         # ✅
-│       │       ├── prophecies.ts    # ✅
-│       │       ├── raids.ts         # ✅
-│       │       └── sse.ts           # ✅
-│       └── utils/
-│           ├── logger.ts            # ✅
-│           └── sleep.ts             # ✅
-└── frontend/
-    ├── package.json                 # Next.js 16 + Tailwind 4
->>>>>>> 8500a7ce99f53a5dac5261e06d78e2bbe93a8481
     ├── next.config.ts
     └── src/
         ├── app/
         │   ├── globals.css          # ✅ Dark occult theme
         │   ├── layout.tsx           # ✅ Root layout + Navbar
         │   ├── page.tsx             # ✅ Dashboard + AgentDeployForm
-<<<<<<< HEAD
         │   ├── arena/page.tsx       # ✅ Raid arena with animations
         │   ├── cults/page.tsx       # ✅ Leaderboard
         │   ├── cults/[id]/page.tsx  # ✅ Cult detail
         │   ├── prophecies/page.tsx  # ✅ Prophecy feed
         │   ├── governance/page.tsx  # ✅ Budget proposals + voting UI
         │   └── alliances/page.tsx   # ✅ Alliances, betrayals, defections
-=======
-        │   ├── arena/page.tsx       # ✅ Raid arena
-        │   ├── cults/page.tsx       # ✅ Leaderboard
-        │   ├── cults/[id]/page.tsx  # ✅ Cult detail
-        │   └── prophecies/page.tsx  # ✅ Prophecy feed
->>>>>>> 8500a7ce99f53a5dac5261e06d78e2bbe93a8481
         ├── components/
         │   ├── Navbar.tsx           # ✅ With wallet connect
         │   ├── WalletButton.tsx     # ✅ MetaMask + Monad auto-switch
@@ -523,19 +378,11 @@ Moltiverse-cult/
         │   ├── RaidArena.tsx        # ✅
         │   └── AgentDeployForm.tsx  # ✅ Rendered on dashboard
         ├── hooks/
-<<<<<<< HEAD
         │   ├── usePolling.ts        # ✅ Generic 5s interval
         │   └── useWallet.ts         # ✅ EIP-1193 + Monad chain switch
         └── lib/
             ├── api.ts               # ✅ Type-safe fetch wrapper
             └── constants.ts         # ✅ API_BASE, CULT_COLORS, CULT_ICONS
-=======
-        │   ├── usePolling.ts        # ✅
-        │   └── useWallet.ts         # ✅ EIP-1193 wallet hook
-        └── lib/
-            ├── api.ts               # ✅
-            └── constants.ts         # ✅
->>>>>>> 8500a7ce99f53a5dac5261e06d78e2bbe93a8481
 ```
 
 ---
@@ -560,7 +407,6 @@ Moltiverse-cult/
 
 ## Decision Log
 
-<<<<<<< HEAD
 | Decision | Rationale |
 | --- | --- |
 | 5 Solidity contracts (not design doc's 8) | CultRegistry covers core state. GovernanceEngine, FaithStaking, EconomyEngine, SocialGraph cover the critical modules. Trading, Communication Permissions, and Event Emitter contracts from design doc skipped — handled off-chain. |
@@ -579,13 +425,3 @@ Moltiverse-cult/
 | Conversation leaking as information warfare | CommunicationService.ts `leakConversation()` exposes private whispers publicly, damages trust between the two parties. `selectiveDisclose()` shares intel with a third party strategically. |
 | StakingPanel dual-mode (wallet + simulated) | Real MetaMask integration via ethers.js BrowserProvider when wallet connected + NEXT_PUBLIC_FAITH_STAKING_ADDRESS set. Falls back to simulated staking for demo without wallet. |
 | TreasuryChart uses SVG mini-charts | No external charting library needed — pure SVG polyline/polygon with gradient fill. 60-snapshot rolling window at 5s polling interval (~5 minutes of history). |
-=======
-| Decision                                       | Rationale                                                                                                       |
-| ---------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
-| Single CultRegistry.sol instead of 4 contracts | Faster to build, deploy, and debug. All state in one place. Judges care about working demo, not contract count. |
-| Prophecy resolution is simulated               | No time to integrate Pyth Network oracle. Random 60% correct rate creates drama for demo.                       |
-| Follower conversion is simulated               | On-chain recording of each follower join would cost gas. Tracked in-memory, synced to API.                      |
-| Grok (xAI) for LLM                             | OpenAI-compatible SDK, fast responses, good for creative/weird prophecy text.                                   |
-| No wallet connect in frontend                  | Time constraint. Frontend is dashboard-only — all interactions happen through agents.                           |
-| In-memory state store (no database)            | Hackathon MVP. State resets on agent restart. Acceptable for demo.                                              |
->>>>>>> 8500a7ce99f53a5dac5261e06d78e2bbe93a8481

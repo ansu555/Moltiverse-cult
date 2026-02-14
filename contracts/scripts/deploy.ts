@@ -23,7 +23,6 @@ async function main() {
   const stakingAddress = await staking.getAddress();
   console.log("FaithStaking deployed to:", stakingAddress);
 
-<<<<<<< HEAD
   // Deploy GovernanceEngine (linked to CultRegistry)
   const GovernanceEngine = await ethers.getContractFactory("GovernanceEngine");
   const governance = await GovernanceEngine.deploy(registryAddress);
@@ -74,14 +73,6 @@ async function main() {
   console.log(`EVENT_EMITTER_ADDRESS=${eventEmitterAddress}`);
   console.log("-----------------------------");
 }
-=======
-  console.log("\n--- Update your .env file ---");
-  console.log(`CULT_REGISTRY_ADDRESS=${registryAddress}`);
-  console.log(`FAITH_STAKING_ADDRESS=${stakingAddress}`);
-  console.log("-----------------------------");
-}
-}
->>>>>>> 8500a7ce99f53a5dac5261e06d78e2bbe93a8481
 
 main().catch((error) => {
   console.error(error);

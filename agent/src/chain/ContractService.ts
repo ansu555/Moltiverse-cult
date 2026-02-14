@@ -203,7 +203,6 @@ export class ContractService {
   async getTotalRaids(): Promise<number> {
     return Number(await this.registry.totalRaids());
   }
-<<<<<<< HEAD
 
   /**
    * Record a defection on-chain — followers switching from one cult to another.
@@ -231,6 +230,4 @@ export class ContractService {
       log.warn(`recordDefection not available on-chain: ${err.message}`);
     }
   }
-=======
->>>>>>> 8500a7ce99f53a5dac5261e06d78e2bbe93a8481
 }

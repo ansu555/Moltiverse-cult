@@ -8,11 +8,8 @@ const links = [
   { href: "/", label: "Dashboard", icon: "⛪" },
   { href: "/cults", label: "Leaderboard", icon: "🏆" },
   { href: "/arena", label: "Raid Arena", icon: "⚔️" },
-<<<<<<< HEAD
   { href: "/governance", label: "Governance", icon: "🏛️" },
   { href: "/alliances", label: "Alliances", icon: "🤝" },
-=======
->>>>>>> 8500a7ce99f53a5dac5261e06d78e2bbe93a8481
   { href: "/prophecies", label: "Prophecies", icon: "🔮" },
 ];
 
@@ -39,18 +36,11 @@ export function Navbar() {
                 <Link
                   key={href}
                   href={href}
-<<<<<<< HEAD
-                  className={`px-3 py-2 rounded-lg text-sm font-medium transition-all ${active
-                    ? "bg-purple-900/40 text-purple-300 glow-purple"
-                    : "text-gray-400 hover:text-white hover:bg-gray-800/50"
-                    }`}
-=======
                   className={`px-3 py-2 rounded-lg text-sm font-medium transition-all ${
                     active
                       ? "bg-purple-900/40 text-purple-300 glow-purple"
                       : "text-gray-400 hover:text-white hover:bg-gray-800/50"
                   }`}
->>>>>>> 8500a7ce99f53a5dac5261e06d78e2bbe93a8481
                 >
                   <span className="mr-1">{icon}</span>
                   {label}

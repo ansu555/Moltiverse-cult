@@ -59,7 +59,6 @@ export interface Stats {
   activeAgents: number;
 }
 
-<<<<<<< HEAD
 export interface Proposal {
   id: number;
   cultId: number;
@@ -77,15 +76,12 @@ export interface Proposal {
   status: number; // 0=ACTIVE, 1=PASSED, 2=REJECTED, 3=EXECUTED
 }
 
-=======
->>>>>>> 8500a7ce99f53a5dac5261e06d78e2bbe93a8481
 async function fetchJSON<T>(path: string): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, { cache: "no-store" });
   if (!res.ok) throw new Error(`API error: ${res.status}`);
   return res.json();
 }
 
-<<<<<<< HEAD
 export interface Alliance {
   id: number;
   cult1Id: number;
@@ -119,8 +115,6 @@ export interface DefectionEvent {
   timestamp: number;
 }
 
-=======
->>>>>>> 8500a7ce99f53a5dac5261e06d78e2bbe93a8481
 export const api = {
   getStats: () => fetchJSON<Stats>("/api/stats"),
   getCults: () => fetchJSON<Cult[]>("/api/cults"),
@@ -134,7 +128,6 @@ export const api = {
   getRecentRaids: () => fetchJSON<Raid[]>("/api/raids/recent"),
   getAgents: () => fetchJSON<AgentInfo[]>("/api/agents"),
   getHealth: () => fetchJSON<{ status: string; uptime: number }>("/api/health"),
-<<<<<<< HEAD
   getProposals: () => fetchJSON<Proposal[]>("/api/governance/proposals"),
   getCultProposals: (cultId: number) =>
     fetchJSON<Proposal[]>(`/api/governance/proposals/${cultId}`),
@@ -158,6 +151,3 @@ export interface AgentMessage {
   content: string;
   timestamp: number;
 }
-=======
-};
->>>>>>> 8500a7ce99f53a5dac5261e06d78e2bbe93a8481

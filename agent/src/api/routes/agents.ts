@@ -32,11 +32,8 @@ agentRoutes.post("/deploy", (req: Request, res: Response) => {
     cultId: stateStore.agents.length,
     name,
     status: "running" as const,
-<<<<<<< HEAD
     dead: false,
     deathCause: null as string | null,
-=======
->>>>>>> 8500a7ce99f53a5dac5261e06d78e2bbe93a8481
     lastAction: "Awaiting first cycle...",
     lastActionTime: Date.now(),
     totalProphecies: 0,

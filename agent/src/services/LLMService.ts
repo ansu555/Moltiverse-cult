@@ -1,24 +1,16 @@
 import OpenAI from "openai";
 import { config } from "../config.js";
 import { createLogger } from "../utils/logger.js";
-<<<<<<< HEAD
 import { saveLLMDecision } from "./InsForgeService.js";
-=======
->>>>>>> 8500a7ce99f53a5dac5261e06d78e2bbe93a8481
 
 const log = createLogger("LLMService");
 
 export interface AgentDecision {
-<<<<<<< HEAD
   action: "prophecy" | "recruit" | "raid" | "govern" | "ally" | "betray" | "coup" | "leak" | "meme" | "bribe" | "idle";
-=======
-  action: "prophecy" | "recruit" | "raid" | "idle";
->>>>>>> 8500a7ce99f53a5dac5261e06d78e2bbe93a8481
   reason: string;
   target?: number; // target cult ID for raid/recruit
   wager?: number; // percentage of treasury to wager
   prediction?: string; // for prophecy action
-<<<<<<< HEAD
   memeUrl?: string; // for meme action
   bribeAmount?: string; // for bribe action
 }
@@ -31,13 +23,10 @@ export interface LLMConfig {
   apiKey: string;
   baseUrl: string;
   model: string;
-=======
->>>>>>> 8500a7ce99f53a5dac5261e06d78e2bbe93a8481
 }
 
 export class LLMService {
   private client: OpenAI;
-<<<<<<< HEAD
   private model: string;
 
   /** Agent DB id for decision audit trail (0 = shared/default) */
@@ -57,14 +46,6 @@ export class LLMService {
     if (llmConfig?.apiKey) {
       log.info(`LLMService initialized with custom API key → ${baseUrl} / ${this.model}`);
     }
-=======
-
-  constructor() {
-    this.client = new OpenAI({
-      apiKey: config.xaiApiKey,
-      baseURL: config.xaiBaseUrl,
-    });
->>>>>>> 8500a7ce99f53a5dac5261e06d78e2bbe93a8481
   }
 
   async generateProphecy(
@@ -74,11 +55,7 @@ export class LLMService {
   ): Promise<string> {
     try {
       const response = await this.client.chat.completions.create({
-<<<<<<< HEAD
         model: this.model,
-=======
-        model: config.xaiModel,
->>>>>>> 8500a7ce99f53a5dac5261e06d78e2bbe93a8481
         messages: [
           {
             role: "system",
@@ -109,7 +86,6 @@ export class LLMService {
       rivals: Array<{ id: number; name: string; treasury: number; followers: number; raidWins: number }>;
       recentProphecies: number;
       marketTrend: string;
-<<<<<<< HEAD
       memoryContext?: string;
     },
     cycleCount: number = 0,
@@ -125,17 +101,6 @@ export class LLMService {
           {
             role: "system",
             content: `${systemPrompt}\n\nYou are the strategic mind behind "${cultName}". Decide your next action as a cult leader competing for dominance. You can form alliances, betray them, attempt coups against rival leaders, leak private conversations to cause chaos, send memes to impress rivals, or bribe other cults with tokens. Respond ONLY with valid JSON matching this schema: {"action": "prophecy"|"recruit"|"raid"|"govern"|"ally"|"betray"|"coup"|"leak"|"meme"|"bribe"|"idle", "reason": "string", "target": number|null, "wager": number|null, "prediction": "string"|null, "memeUrl": "string"|null, "bribeAmount": "string"|null}`,
-=======
-    }
-  ): Promise<AgentDecision> {
-    try {
-      const response = await this.client.chat.completions.create({
-        model: config.xaiModel,
-        messages: [
-          {
-            role: "system",
-            content: `${systemPrompt}\n\nYou are the strategic mind behind "${cultName}". Decide your next action as a cult leader competing for dominance. Respond ONLY with valid JSON matching this schema: {"action": "prophecy"|"recruit"|"raid"|"idle", "reason": "string", "target": number|null, "wager": number|null, "prediction": "string"|null}`,
->>>>>>> 8500a7ce99f53a5dac5261e06d78e2bbe93a8481
           },
           {
             role: "user",
@@ -144,20 +109,12 @@ export class LLMService {
 - Followers: ${context.ownFollowers}
 - Raid victories: ${context.ownRaidWins}
 - Recent prophecies this cycle: ${context.recentProphecies}
-<<<<<<< HEAD
 - Market trend: ${context.marketTrend}${memorySection}
-=======
-- Market trend: ${context.marketTrend}
->>>>>>> 8500a7ce99f53a5dac5261e06d78e2bbe93a8481
 
 Rival cults:
 ${context.rivals.map((r) => `  - [ID:${r.id}] ${r.name}: ${r.treasury} MON, ${r.followers} followers, ${r.raidWins} wins`).join("\n")}
 
-<<<<<<< HEAD
 Choose your next action wisely. If raiding, specify target cult ID and wager percentage (10-50% of treasury). You can also send a meme to impress a rival or bribe them with cult tokens for goodwill. Consider your memory and trust relationships when choosing targets or allies.`,
-=======
-Choose your next action wisely. If raiding, specify target cult ID and wager percentage (10-50% of treasury).`,
->>>>>>> 8500a7ce99f53a5dac5261e06d78e2bbe93a8481
           },
         ],
         temperature: 0.7,
@@ -168,16 +125,12 @@ Choose your next action wisely. If raiding, specify target cult ID and wager per
       // Extract JSON from response
       const jsonMatch = content.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
-<<<<<<< HEAD
         const decision = JSON.parse(jsonMatch[0]) as AgentDecision;
 
         // Persist decision to InsForge (fire-and-forget)
         saveLLMDecision(this.agentDbId, this.cultId, decision, cycleCount, { raw: content }).catch(() => {});
 
         return decision;
-=======
-        return JSON.parse(jsonMatch[0]) as AgentDecision;
->>>>>>> 8500a7ce99f53a5dac5261e06d78e2bbe93a8481
       }
       return { action: "idle", reason: "Failed to parse LLM response" };
     } catch (error: any) {
@@ -186,7 +139,6 @@ Choose your next action wisely. If raiding, specify target cult ID and wager per
     }
   }
 
-<<<<<<< HEAD
   /**
    * Generate a meme caption for inter-agent social interaction.
    */
@@ -218,8 +170,6 @@ Choose your next action wisely. If raiding, specify target cult ID and wager per
     }
   }
 
-=======
->>>>>>> 8500a7ce99f53a5dac5261e06d78e2bbe93a8481
   async generateScripture(
     systemPrompt: string,
     cultName: string,
@@ -227,11 +177,7 @@ Choose your next action wisely. If raiding, specify target cult ID and wager per
   ): Promise<string> {
     try {
       const response = await this.client.chat.completions.create({
-<<<<<<< HEAD
         model: this.model,
-=======
-        model: config.xaiModel,
->>>>>>> 8500a7ce99f53a5dac5261e06d78e2bbe93a8481
         messages: [
           {
             role: "system",

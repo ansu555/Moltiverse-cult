@@ -5,7 +5,6 @@ import { cultRoutes } from "./routes/cults.js";
 import { prophecyRoutes } from "./routes/prophecies.js";
 import { raidRoutes } from "./routes/raids.js";
 import { agentRoutes } from "./routes/agents.js";
-<<<<<<< HEAD
 import { governanceRoutes } from "./routes/governance.js";
 import { allianceRoutes } from "./routes/alliances.js";
 import { communicationRoutes } from "./routes/communication.js";
@@ -13,9 +12,6 @@ import { sseRoutes } from "./routes/sse.js";
 import { agentCreationRoutes } from "./routes/agentCreation.js";
 import { memeTransferRoutes } from "./routes/memeTransfers.js";
 import type { AgentOrchestrator } from "../core/AgentOrchestrator.js";
-=======
-import { sseRoutes } from "./routes/sse.js";
->>>>>>> 8500a7ce99f53a5dac5261e06d78e2bbe93a8481
 
 const log = createLogger("API");
 
@@ -25,7 +21,6 @@ export interface StateStore {
   prophecies: ProphecyInfo[];
   raids: RaidInfo[];
   agents: AgentInfo[];
-<<<<<<< HEAD
   proposals: any[];
   budgets: Record<number, any>;
   alliances: any[];
@@ -35,8 +30,6 @@ export interface StateStore {
   memory: Record<number, any>;
   messages: any[];
   evolutionTraits: Record<number, any>;
-=======
->>>>>>> 8500a7ce99f53a5dac5261e06d78e2bbe93a8481
   sseClients: express.Response[];
 }
 
@@ -81,13 +74,9 @@ export interface RaidInfo {
 export interface AgentInfo {
   cultId: number;
   name: string;
-<<<<<<< HEAD
   status: "running" | "stopped" | "idle" | "dead";
   dead: boolean;
   deathCause: string | null;
-=======
-  status: "running" | "stopped" | "idle";
->>>>>>> 8500a7ce99f53a5dac5261e06d78e2bbe93a8481
   lastAction: string;
   lastActionTime: number;
   totalProphecies: number;
@@ -101,7 +90,6 @@ export const stateStore: StateStore = {
   prophecies: [],
   raids: [],
   agents: [],
-<<<<<<< HEAD
   proposals: [],
   budgets: {},
   alliances: [],
@@ -111,8 +99,6 @@ export const stateStore: StateStore = {
   memory: {},
   messages: [],
   evolutionTraits: {},
-=======
->>>>>>> 8500a7ce99f53a5dac5261e06d78e2bbe93a8481
   sseClients: [],
 };
 
@@ -128,11 +114,7 @@ export function broadcastEvent(event: string, data: any) {
   });
 }
 
-<<<<<<< HEAD
 export function startApiServer(port: number, orchestrator?: AgentOrchestrator) {
-=======
-export function startApiServer(port: number) {
->>>>>>> 8500a7ce99f53a5dac5261e06d78e2bbe93a8481
   const app = express();
 
   app.use(cors());
@@ -153,7 +135,6 @@ export function startApiServer(port: number) {
   app.use("/api/prophecies", prophecyRoutes);
   app.use("/api/raids", raidRoutes);
   app.use("/api/agents", agentRoutes);
-<<<<<<< HEAD
   app.use("/api/governance", governanceRoutes);
   app.use("/api/alliances", allianceRoutes(stateStore));
   app.use("/api/communication", communicationRoutes(stateStore));
@@ -165,10 +146,6 @@ export function startApiServer(port: number) {
     app.use("/api/social", memeTransferRoutes(orchestrator));
   }
 
-=======
-  app.use("/api/events", sseRoutes);
-
->>>>>>> 8500a7ce99f53a5dac5261e06d78e2bbe93a8481
   // Stats endpoint
   app.get("/api/stats", (_req, res) => {
     const totalTreasury = stateStore.cults.reduce(

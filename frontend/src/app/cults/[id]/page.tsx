@@ -5,11 +5,8 @@ import { useParams } from "next/navigation";
 import { api, Cult, Prophecy, Raid } from "@/lib/api";
 import { usePolling } from "@/hooks/usePolling";
 import { ProphecyFeed } from "@/components/ProphecyFeed";
-<<<<<<< HEAD
 import { StakingPanel } from "@/components/StakingPanel";
 import { TreasuryChart } from "@/components/TreasuryChart";
-=======
->>>>>>> 8500a7ce99f53a5dac5261e06d78e2bbe93a8481
 import { CULT_COLORS, CULT_ICONS } from "@/lib/constants";
 
 interface CultDetail extends Cult {
@@ -98,7 +95,6 @@ export default function CultDetailPage() {
         )}
       </div>
 
-<<<<<<< HEAD
       {/* Staking + Treasury Row */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <StakingPanel
@@ -118,8 +114,6 @@ export default function CultDetailPage() {
         />
       </div>
 
-=======
->>>>>>> 8500a7ce99f53a5dac5261e06d78e2bbe93a8481
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Prophecies */}
         <div>
@@ -141,14 +135,9 @@ export default function CultDetailPage() {
               return (
                 <div
                   key={raid.id}
-<<<<<<< HEAD
-                  className={`border rounded-lg p-3 flex items-center justify-between ${won ? "border-green-900/50" : "border-red-900/50"
-                    }`}
-=======
                   className={`border rounded-lg p-3 flex items-center justify-between ${
                     won ? "border-green-900/50" : "border-red-900/50"
                   }`}
->>>>>>> 8500a7ce99f53a5dac5261e06d78e2bbe93a8481
                 >
                   <div className="flex items-center gap-2 text-sm">
                     <span className={won ? "text-green-400" : "text-red-400"}>

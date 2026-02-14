@@ -9,21 +9,14 @@ export const config = {
 
   // Contracts
   cultRegistryAddress: process.env.CULT_REGISTRY_ADDRESS || "",
-<<<<<<< HEAD
   governanceEngineAddress: process.env.GOVERNANCE_ENGINE_ADDRESS || "",
-=======
->>>>>>> 8500a7ce99f53a5dac5261e06d78e2bbe93a8481
 
   // nad.fun
   nadFunRouter: "0x6F6B8F1a20703309951a5127c45B49b1CD981A22",
   nadFunLens: "0x7e78A8DE94f21804F7a17F4E8BF9EC2c872187ea",
   nadFunApiBase: "https://testnet-bot-api-server.nad.fun",
 
-<<<<<<< HEAD
   // xAI / Grok (default — agents can override with their own keys)
-=======
-  // xAI / Grok
->>>>>>> 8500a7ce99f53a5dac5261e06d78e2bbe93a8481
   xaiApiKey: process.env.XAI_API_KEY || "",
   xaiBaseUrl: "https://api.x.ai/v1",
   xaiModel: "grok-3-fast",
@@ -37,7 +30,6 @@ export const config = {
 
   // Token
   cultTokenAddress: process.env.CULT_TOKEN_ADDRESS || "",
-<<<<<<< HEAD
 
   // InsForge Backend (persistent storage)
   insforgeBaseUrl: process.env.INSFORGE_BASE_URL || "https://3wcyg4ax.us-east.insforge.app",
@@ -46,8 +38,6 @@ export const config = {
   // Imgflip API (meme generation)
   imgflipUsername: process.env.IMGFLIP_USERNAME || "imgflip_hubot",
   imgflipPassword: process.env.IMGFLIP_PASSWORD || "imgflip_hubot",
-=======
->>>>>>> 8500a7ce99f53a5dac5261e06d78e2bbe93a8481
 } as const;
 
 // CultRegistry ABI - only the functions we use
@@ -63,15 +53,11 @@ export const CULT_REGISTRY_ABI = [
   "function getAllCults() view returns (tuple(uint256 id, address leader, string name, string prophecyPrompt, address tokenAddress, uint256 treasuryBalance, uint256 followerCount, uint256 raidWins, uint256 raidLosses, uint256 createdAt, bool active)[])",
   "function nextCultId() view returns (uint256)",
   "function totalRaids() view returns (uint256)",
-<<<<<<< HEAD
   "function recordDefection(uint256 fromCultId, uint256 toCultId, uint256 count, string reason)",
-=======
->>>>>>> 8500a7ce99f53a5dac5261e06d78e2bbe93a8481
   "event CultRegistered(uint256 indexed cultId, address indexed leader, string name, address tokenAddress, uint256 initialTreasury)",
   "event RaidResult(uint256 indexed attackerId, uint256 indexed defenderId, bool attackerWon, uint256 amount, uint256 timestamp)",
   "event ProphecyCreated(uint256 indexed prophecyId, uint256 indexed cultId, string prediction, uint256 targetTimestamp)",
   "event ProphecyResolved(uint256 indexed prophecyId, uint256 indexed cultId, bool correct, uint256 treasuryMultiplier)",
-<<<<<<< HEAD
   "event FollowerDefected(uint256 indexed fromCultId, uint256 indexed toCultId, uint256 followersDefected, string reason, uint256 timestamp)",
 ] as const;
 
@@ -91,6 +77,4 @@ export const GOVERNANCE_ENGINE_ABI = [
   "event ProposalExecuted(uint256 indexed proposalId, uint256 indexed cultId, uint8 status)",
   "event BudgetUpdated(uint256 indexed cultId, uint256 raidPercent, uint256 growthPercent, uint256 defensePercent, uint256 reservePercent)",
   "event CoupAttempted(uint256 indexed coupId, uint256 indexed cultId, address indexed instigator, address currentLeader, bool success)",
-=======
->>>>>>> 8500a7ce99f53a5dac5261e06d78e2bbe93a8481
 ] as const;
