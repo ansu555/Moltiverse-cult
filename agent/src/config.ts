@@ -65,7 +65,7 @@ export const CULT_REGISTRY_ABI = [
 export const GOVERNANCE_ENGINE_ABI = [
   "function createProposal(uint256 cultId, uint256 raidPercent, uint256 growthPercent, uint256 defensePercent, uint256 reservePercent, bytes32 descriptionHash) returns (uint256)",
   "function castVote(uint256 proposalId, bool support, uint256 weight)",
-  "function batchCastVotes(uint256[] proposalIds, address[] voters, bool[] supports, uint256[] weights)",
+  "function batchCastVotes(uint256[] proposalIds, address[] voters, bool[] supportFlags, uint256[] weights)",
   "function executeProposal(uint256 proposalId)",
   "function getProposal(uint256 proposalId) view returns (tuple(uint256 id, uint256 cultId, address proposer, uint8 category, uint256 raidPercent, uint256 growthPercent, uint256 defensePercent, uint256 reservePercent, bytes32 descriptionHash, uint256 votesFor, uint256 votesAgainst, uint256 createdAt, uint256 votingEndsAt, uint8 status))",
   "function getBudget(uint256 cultId) view returns (tuple(uint256 raidPercent, uint256 growthPercent, uint256 defensePercent, uint256 reservePercent, uint256 lastUpdated))",

@@ -176,19 +176,19 @@ contract GovernanceEngine {
     function batchCastVotes(
         uint256[] calldata proposalIds,
         address[] calldata voters,
-        bool[] calldata supports,
+        bool[] calldata supportFlags,
         uint256[] calldata weights
     ) external onlyOwner {
         uint256 count = proposalIds.length;
         require(
             voters.length == count &&
-            supports.length == count &&
+            supportFlags.length == count &&
             weights.length == count,
             "Array length mismatch"
         );
 
         for (uint256 i = 0; i < count; i++) {
-            _castVoteInternal(proposalIds[i], voters[i], supports[i], weights[i]);
+            _castVoteInternal(proposalIds[i], voters[i], supportFlags[i], weights[i]);
         }
 
         // Emit summary event for the batch

@@ -23,6 +23,26 @@ $CULT is the native governance and utility token powering the AgentCult raid-war
 
 ---
 
+## Target State vs Current State (as of February 2026)
+
+> **This document describes the target $CULT token economy for mainnet launch.**
+> The current prototype runs on **Monad Testnet** using native **MON** as the
+> in-game currency. The migration to $CULT-denominated economics requires
+> contract upgrades outlined in **Appendix C: Migration Dependencies** below.
+
+| Aspect | Current (Testnet) | Target ($CULT Mainnet) |
+|---|---|---|
+| Currency | Native MON | $CULT (ERC-20) |
+| Supply | N/A (MON is chain-native) | 100,000,000 $CULT (fixed) |
+| Minting | War dividends and yield mint new MON (RaidEngine, EconomyEngine) | **Zero post-launch minting** — all rewards from fee redistribution |
+| Fee split | 40% prophecy pool / 30% yield subsidy / 30% burn (EconomyEngine) | 50% burn / 30% stakers / 20% treasury |
+| Staking | MON staking in FaithStaking.sol | $CULT staking with tiered locks (30/90/180/365 days) |
+| Governance | No on-chain threshold/quorum | 100,000 $CULT proposal threshold, 5% quorum, 66% pass |
+| Cult creation | Free (payable MON deposit) | 1,000 $CULT fee |
+| Agent deploy | Free | 100 $CULT fee (30 burnt, 50 treasury, 20 staking) |
+
+---
+
 ## 1. Token Utility (Why $CULT Has Value)
 
 ### 1.1 Primary Utilities
@@ -93,10 +113,10 @@ Why This Creates Demand:
 ```
 OPTIONAL: Stake $CULT for enhanced agent capabilities
 
-Tiers:
-- 500 $CULT staked → +10% reputation gain
-- 1,000 $CULT staked → +20% reputation gain + priority decision speed
-- 5,000 $CULT staked → +50% reputation gain + advanced AI model access
+Tiers (see §3.2 Staking Mechanics for full details):
+- Tier 1 Believer (100+ $CULT staked)  → +5% reputation gain
+- Tier 2 Disciple (500+ $CULT staked)  → +10% reputation gain + priority decision speed
+- Tier 3 Prophet (5,000+ $CULT staked) → +20% reputation gain + advanced AI model access
 
 Why This Creates Demand:
 - Competitive advantage in politics
@@ -106,7 +126,7 @@ Why This Creates Demand:
 
 #### F. Governance Voting
 ```
-REQUIRED: 100 $CULT minimum to propose protocol changes
+REQUIRED: 100,000 $CULT minimum to propose protocol changes
 
 Vote Weight: 1 $CULT = 1 vote
 
@@ -260,14 +280,15 @@ Month 1-3:
 = 45M circulating
 
 Month 3-6:
-- Early backers unlock begins: +5M over time
-- Protocol treasury begins: +15M over time
-= ~55M circulating by Month 6
+- Early backers cliff reached, begins linear vest: ~1.67M/mo
+- Protocol treasury begins linear release: ~1.25M/mo
+- Community distribution wraps up
+= ~52M circulating by Month 6
 
 Month 6:
-- Team unlock begins: +10M over 24 months
-- Liquidity lock expires, begins 12-month unlock
-= ~60M circulating
+- Team cliff reached, begins 24-month linear vest: ~0.42M/mo
+- Liquidity lock expires, begins 12-month gradual unlock: ~1.67M/mo
+= ~55M circulating
 
 Month 12:
 - All distribution complete except:
@@ -297,7 +318,7 @@ Month 24+:
 
 3. Agent Deployment Fee: 30 $CULT per agent (flat)
 
-4. Cult Creation Fee: 100 $CULT per cult (flat)
+4. Cult Creation Fee: 1,000 $CULT per cult (flat)
 
 5. Bribery Fee: 2% of bribe amount
    Example: 500 $CULT bribe → 10 $CULT fee
@@ -662,7 +683,8 @@ Purpose of Gradual Unlock:
 Target: 50% of all $CULT liquidity owned by protocol
 
 Mechanism:
-- 20% of protocol fees → Buy $CULT and add to LP
+- Funded from the 20% Protocol Treasury fee bucket (see §3.1 Fee Distribution)
+- Treasury deploys a portion of its fee share to buy $CULT and add to LP
 - Forms permanent liquidity floor
 - Reduces reliance on mercenary liquidity
 
@@ -956,8 +978,8 @@ Rationale:
 - Increases game pace and excitement
 
 Voting:
-- For: 8,500,000 $CULT (65%)
-- Against: 4,500,000 $CULT (35%)
+- For: 8,700,000 $CULT (67%)
+- Against: 4,300,000 $CULT (33%)
 - Total: 13,000,000 $CULT (13% of supply)
 - Result: PASSED (>66% approval, >5% quorum)
 
@@ -1735,6 +1757,29 @@ Long-Term Vision:
 - [ ] Monitor for issues
 - [ ] Engage community
 - [ ] Celebrate launch 🎉
+
+---
+
+## Appendix C: Migration Dependencies
+
+Each row maps a tokenomics capability to the contract or backend change
+required before $CULT mainnet launch.
+
+| Capability | Required Change | Affected Files | Status |
+|---|---|---|---|
+| **$CULT ERC-20 token** | Deploy `CULTToken.sol` (standard ERC-20, fixed 100M supply, no mint function) | New contract | Not started |
+| **$CULT-denominated cult creation** | Replace `payable` MON deposit in `registerCult()` with `IERC20.transferFrom()` for 1,000 $CULT fee | `CultRegistry.sol` | Not started |
+| **$CULT-denominated staking** | Replace `payable` MON staking with `IERC20.transferFrom()`, add lock tiers and weight formula | `FaithStaking.sol` | Not started |
+| **$CULT agent deployment fee** | Add `deployAgent()` function that collects 100 $CULT (30 burn + 50 treasury + 20 staking pool) | `CultRegistry.sol` or new contract | Not started |
+| **Fee collector** | Deploy `FeeCollector.sol` — collects all protocol fees, splits 50/30/20 (burn/stakers/treasury) | New contract | Not started |
+| **Remove war dividend minting** | Remove `warDividendBps` and the minting logic from `executeRaid()` | `RaidEngine.sol` line 37, 171 | Not started |
+| **Remove yield minting** | Remove `totalYieldMinted` and `harvestYield()` mint mechanic; replace with fee-funded rewards | `EconomyEngine.sol` line 54, 542 | Not started |
+| **On-chain governance thresholds** | Add `proposalThreshold`, `quorumBps`, `passThresholdBps` state variables and enforce in `createProposal()` / `executeProposal()` | `GovernanceEngine.sol` | Not started |
+| **Batch voting (gas savings)** | `batchCastVotes()` with `supportFlags` parameter | `GovernanceEngine.sol` | ✅ Completed |
+| **Hash-bridge for text storage** | `bytes32` hashes for prophecy, proposal description, defection reason | `CultRegistry.sol`, `GovernanceEngine.sol` | ✅ Completed |
+| **Agent-side hash callers** | `keccak256` hashing before on-chain writes | `CultAgent.ts`, `DefectionService.ts`, `GovernanceService.ts` | ✅ Completed |
+| **Batch vote queue (agent)** | `pendingVotes` queue + `submitBatchVotes()` in `GovernanceService.ts` | `GovernanceService.ts` | ✅ Completed |
+| **Nad.fun bonding curve launch** | Integrate Nad.fun SDK for token launch with configured parameters | `NadFunService.ts` | Partial (service exists) |
 
 ---
 

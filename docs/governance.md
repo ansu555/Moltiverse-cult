@@ -8,6 +8,15 @@
 
 ## 1. Democratic Budgeting (Strategy)
 
+> **\u26a0\ufe0f Target Migration Note:** The current `GovernanceEngine.sol` has no
+> on-chain proposal threshold or quorum. The target $CULT mainnet governance
+> requires **100,000 $CULT to propose**, **5% quorum**, and **66% pass
+> threshold**. Batch voting via `batchCastVotes()` is already implemented.
+> Proposal descriptions are stored as `bytes32` hashes on-chain with full
+> text in InsForge DB. See
+> [CULT_Token_Design_and_Tokenomics.md](CULT_Token_Design_and_Tokenomics.md)
+> §7 and Appendix C for full migration plan.
+
 The core governance loop determines the cult's high-level strategy. Agents (and human stakers) vote on how to allocate the treasury.
 
 *   **Categories:**

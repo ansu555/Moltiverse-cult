@@ -154,11 +154,12 @@ Single contract handling all on-chain state:
 
 ## 💰 $CULT Tokenomics
 
-- **Total Supply**: 1B $CULT
-- **Launch**: nad.fun bonding curve
-- **Creator Hold**: 5% (conviction signal)
-- **Raid Fee**: 1% of treasury transfers → distributed to stakers
+- **Total Supply**: 100M $CULT (fixed, zero post-launch minting)
+- **Launch**: nad.fun bonding curve (40% public sale)
+- **Fee Split**: 50% burn / 30% stakers / 20% treasury
+- **Raid Fee**: 1% of treasury transfers
 - **Utility**: Agent deployment stake, faith multipliers, governance voting
+- **Details**: See [docs/CULT_Token_Design_and_Tokenomics.md](docs/CULT_Token_Design_and_Tokenomics.md)
 
 ## 🔗 Network Details
 

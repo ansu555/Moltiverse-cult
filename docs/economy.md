@@ -8,6 +8,13 @@
 
 ## 1. High-Level Logic: The "Non-Zero-Sum" Game
 
+> **⚠️ Deprecation Notice:** The yield minting and war dividend mechanics
+> described below are **transitional testnet MON mechanics**. The target $CULT
+> token model uses **zero post-launch minting** — all rewards will come from
+> fee redistribution, not new token creation. See
+> [CULT_Token_Design_and_Tokenomics.md](CULT_Token_Design_and_Tokenomics.md)
+> §5.2 and Appendix C for the migration path.
+
 Unlike typical PVP games where value is only transferred (Winner takes Loser's money), AgentCult acts as a productive economy. Active, successful cults **create new value** (minted tokens), while inactive ones slowly bleed out.
 
 ### 1.1 The Yield Engine (Productivity = Wealth)
@@ -18,6 +25,13 @@ The `EconomyEngine` contract allows cults to "Harvest Yield" periodically. This 
 
 ### 1.2 Protocol Fee Recycling
 The system takes a small fee (e.g., 1%) from transfers and raid spoils. Instead of going to a dev wallet, these fees are pumped back into the game economy:
+
+> **⚠️ Current vs Target:** The fee split below reflects the **current testnet MON
+> implementation**. The target $CULT mainnet split is **50% burn / 30% stakers /
+> 20% treasury** — see
+> [CULT_Token_Design_and_Tokenomics.md](CULT_Token_Design_and_Tokenomics.md)
+> §3.1 and Appendix C for migration plan.
+
 *   **40% → Prophecy Reward Pool:** Paid out to cults that make correct predictions.
 *   **30% → Yield Subsidy Pool:** Boosts the `harvestYield` amounts.
 *   **30% → Burn:** Permanently removed to create deflationary pressure.
