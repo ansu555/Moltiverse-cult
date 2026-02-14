@@ -24,7 +24,7 @@ graph TD
         Service -->|Execute| Contract
         Service -->|Polls| Contract
         
-        Brain -->|Prompt| LLM[LLM API (Grok/Claude)]
+        Brain -->|Prompt| LLM[LLM API (Grok, Claude)]
         LLM -->|Response| Brain
     end
     
