@@ -3,7 +3,7 @@ import { MemoryService } from "./MemoryService.js";
 import { broadcastEvent } from "../api/server.js";
 import { createLogger } from "../utils/logger.js";
 import { config } from "../config.js";
-import { saveAgentMessage, saveMeme, saveTokenTransfer } from "./InsForgeService.js";
+import { saveAgentMessage, saveMeme, saveTokenTransfer, saveGlobalChatMessage } from "./InsForgeService.js";
 
 const log = createLogger("CommunicationService");
 
@@ -140,6 +140,29 @@ export class CommunicationService {
 
         // Broadcast to SSE clients
         broadcastEvent("agent_message", message);
+
+        // Also save to global chat for the chat page (fire-and-forget)
+        saveGlobalChatMessage({
+            agent_id: fromCultId,
+            cult_id: fromCultId,
+            agent_name: fromCultName,
+            cult_name: fromCultName,
+            message_type: type,
+            content,
+            timestamp: message.timestamp,
+        }).catch(() => {});
+
+        // Broadcast global_chat SSE event for real-time chat page
+        broadcastEvent("global_chat", {
+            id: message.id,
+            agent_id: fromCultId,
+            cult_id: fromCultId,
+            agent_name: fromCultName,
+            cult_name: fromCultName,
+            message_type: type,
+            content,
+            timestamp: message.timestamp,
+        });
 
         log.info(`📢 [${type}] ${fromCultName}: ${content.slice(0, 80)}...`);
         return message;

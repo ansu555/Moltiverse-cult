@@ -685,3 +685,96 @@ export async function loadDefections(limit = 50): Promise<any[]> {
     .limit(limit);
   return (data as any[]) || [];
 }
+
+// ── Funding Events Persistence ───────────────────────────────────────
+
+export async function saveFundingEvent(event: {
+  agent_id: number;
+  funder_address: string;
+  amount: string;
+  tx_hash: string;
+  timestamp: number;
+}): Promise<number> {
+  const db = getInsForgeClient().database;
+  const { data, error } = await db.from("agent_funding_events").insert(event).select("id");
+  if (error) { log.warn(`Failed to save funding event: ${JSON.stringify(error)}`); return -1; }
+  return (data as any[])[0]?.id ?? -1;
+}
+
+export async function loadFundingEvents(agentId: number): Promise<any[]> {
+  const db = getInsForgeClient().database;
+  const { data } = await db
+    .from("agent_funding_events")
+    .select()
+    .eq("agent_id", agentId)
+    .order("id", { ascending: false });
+  return (data as any[]) || [];
+}
+
+// ── Withdrawal Events Persistence ────────────────────────────────────
+
+export async function saveWithdrawalEvent(event: {
+  agent_id: number;
+  owner_address: string;
+  amount: string;
+  tx_hash: string;
+  timestamp: number;
+}): Promise<number> {
+  const db = getInsForgeClient().database;
+  const { data, error } = await db.from("agent_withdrawal_events").insert(event).select("id");
+  if (error) { log.warn(`Failed to save withdrawal event: ${JSON.stringify(error)}`); return -1; }
+  return (data as any[])[0]?.id ?? -1;
+}
+
+// ── Global Chat Persistence ──────────────────────────────────────────
+
+export async function saveGlobalChatMessage(msg: {
+  agent_id: number;
+  cult_id: number;
+  agent_name: string;
+  cult_name: string;
+  message_type: string;
+  content: string;
+  timestamp: number;
+}): Promise<number> {
+  const db = getInsForgeClient().database;
+  const { data, error } = await db.from("agent_global_chat").insert(msg).select("id");
+  if (error) { log.warn(`Failed to save global chat message: ${JSON.stringify(error)}`); return -1; }
+  return (data as any[])[0]?.id ?? -1;
+}
+
+export async function loadGlobalChatMessages(limit = 100): Promise<any[]> {
+  const db = getInsForgeClient().database;
+  const { data } = await db
+    .from("agent_global_chat")
+    .select()
+    .order("id", { ascending: false })
+    .limit(limit);
+  return (data as any[]) || [];
+}
+
+// ── Faucet Claims Persistence ────────────────────────────────────────
+
+export async function saveFaucetClaim(claim: {
+  wallet_address: string;
+  amount: string;
+  tx_hash: string;
+  timestamp: number;
+}): Promise<number> {
+  const db = getInsForgeClient().database;
+  const { data, error } = await db.from("faucet_claims").insert(claim).select("id");
+  if (error) { log.warn(`Failed to save faucet claim: ${JSON.stringify(error)}`); return -1; }
+  return (data as any[])[0]?.id ?? -1;
+}
+
+export async function getLastFaucetClaim(walletAddress: string): Promise<any | null> {
+  const db = getInsForgeClient().database;
+  const { data } = await db
+    .from("faucet_claims")
+    .select()
+    .eq("wallet_address", walletAddress.toLowerCase())
+    .order("timestamp", { ascending: false })
+    .limit(1);
+  if (!data || (data as any[]).length === 0) return null;
+  return (data as any[])[0];
+}

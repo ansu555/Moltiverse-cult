@@ -63,6 +63,18 @@ async function main() {
   const eventEmitterAddress = await eventEmitter.getAddress();
   console.log("EventEmitter deployed to:", eventEmitterAddress);
 
+  // Deploy CULTToken (initial supply goes to deployer for distribution)
+  const CULTToken = await ethers.getContractFactory("CULTToken");
+  const cultToken = await CULTToken.deploy(deployer.address);
+  await cultToken.waitForDeployment();
+
+  const cultTokenAddress = await cultToken.getAddress();
+  console.log("CULTToken deployed to:", cultTokenAddress);
+
+  // Point staking pool to FaithStaking contract
+  await cultToken.setStakingPool(stakingAddress);
+  console.log("CULTToken staking pool set to FaithStaking:", stakingAddress);
+
   console.log("\n--- Update your .env file ---");
   console.log(`CULT_REGISTRY_ADDRESS=${registryAddress}`);
   console.log(`FAITH_STAKING_ADDRESS=${stakingAddress}`);
@@ -71,6 +83,7 @@ async function main() {
   console.log(`ECONOMY_ENGINE_ADDRESS=${economyAddress}`);
   console.log(`RAID_ENGINE_ADDRESS=${raidEngineAddress}`);
   console.log(`EVENT_EMITTER_ADDRESS=${eventEmitterAddress}`);
+  console.log(`CULT_TOKEN_ADDRESS=${cultTokenAddress}`);
   console.log("-----------------------------");
 }
 

@@ -11,6 +11,9 @@ const links = [
   { href: "/governance", label: "Governance", icon: "🏛️" },
   { href: "/alliances", label: "Alliances", icon: "🤝" },
   { href: "/prophecies", label: "Prophecies", icon: "🔮" },
+  { href: "/chat", label: "Chat", icon: "💬" },
+  { href: "/deploy", label: "Deploy", icon: "🤖" },
+  { href: "/faucet", label: "Faucet", icon: "🚰" },
 ];
 
 export function Navbar() {

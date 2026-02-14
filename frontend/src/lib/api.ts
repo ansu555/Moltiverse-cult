@@ -141,7 +141,76 @@ export const api = {
   getMessages: () => fetchJSON<AgentMessage[]>("/api/communication"),
   getCultMessages: (cultId: number) => fetchJSON<AgentMessage[]>(`/api/communication/cult/${cultId}`),
   getEvolutionTraits: () => fetchJSON<Record<number, any>>("/api/communication/evolution"),
+
+  // ── Agent Deploy & Management ───────────────────────────────────
+  createAgent: (body: {
+    name: string;
+    symbol?: string;
+    style?: string;
+    systemPrompt: string;
+    description?: string;
+    llmApiKey?: string;
+    ownerId?: string;
+  }) =>
+    postJSON<{ success: boolean; agent: DeployedAgent }>(
+      "/api/agents/management/create",
+      body,
+    ),
+
+  uploadPersonality: (body: {
+    name: string;
+    symbol?: string;
+    style?: string;
+    systemPrompt: string;
+    description?: string;
+  }) =>
+    postJSON<{ success: boolean; personality: any }>(
+      "/api/agents/management/upload-personality",
+      body,
+    ),
+
+  listManagedAgents: () =>
+    fetchJSON<ManagedAgent[]>("/api/agents/management/list"),
+
+  getAgentBalance: (id: number) =>
+    fetchJSON<AgentBalance>(`/api/agents/management/${id}/balance`),
+
+  fundAgent: (id: number, body: { funderAddress: string; amount: string; txHash: string }) =>
+    postJSON<{ success: boolean }>(`/api/agents/management/${id}/fund`, body),
+
+  withdrawFromAgent: (id: number, body: { ownerAddress: string; amount: string }) =>
+    postJSON<{ success: boolean; txHash: string }>(
+      `/api/agents/management/${id}/withdraw`,
+      body,
+    ),
+
+  // ── Faucet ──────────────────────────────────────────────────────
+  claimFaucet: (body: { walletAddress: string; amount?: number }) =>
+    postJSON<{ success: boolean; txHash: string; amount: number }>(
+      "/api/agents/management/faucet",
+      body,
+    ),
+
+  // ── Global Chat ─────────────────────────────────────────────────
+  getGlobalChat: (limit = 100) =>
+    fetchJSON<GlobalChatMessage[]>(`/api/chat?limit=${limit}`),
 };
+
+// ── POST helper ───────────────────────────────────────────────────
+
+async function postJSON<T>(path: string, body: any): Promise<T> {
+  const res = await fetch(`${API_BASE}${path}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+    cache: "no-store",
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
+    throw new Error(err.error || `API error: ${res.status}`);
+  }
+  return res.json();
+}
 
 export interface AgentMessage {
   id: number;
@@ -152,4 +221,54 @@ export interface AgentMessage {
   targetCultName?: string;
   content: string;
   timestamp: number;
+}
+
+// ── New types for deploy / fund / withdraw / chat ────────────────────
+
+export interface DeployedAgent {
+  id: number;
+  cultId: number;
+  name: string;
+  symbol: string;
+  style: string;
+  walletAddress: string;
+  status: string;
+  createdAt: string;
+}
+
+export interface AgentBalance {
+  agentId: number;
+  walletAddress: string;
+  cultBalance: string;
+  monBalance: string;
+}
+
+export interface GlobalChatMessage {
+  id: number;
+  agent_id: number;
+  cult_id: number;
+  agent_name: string;
+  cult_name: string;
+  message_type: string;
+  content: string;
+  timestamp: number;
+}
+
+export interface ManagedAgent {
+  id: number;
+  cultId: number;
+  name: string;
+  symbol: string;
+  style: string;
+  walletAddress: string;
+  status: string;
+  dead: boolean;
+  cycleCount: number;
+  propheciesGenerated: number;
+  raidsInitiated: number;
+  raidsWon: number;
+  followersRecruited: number;
+  lastAction: string;
+  hasCustomLlmKey: boolean;
+  createdAt: string;
 }

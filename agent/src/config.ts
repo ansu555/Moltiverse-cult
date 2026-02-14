@@ -80,3 +80,25 @@ export const GOVERNANCE_ENGINE_ABI = [
   "event BudgetUpdated(uint256 indexed cultId, uint256 raidPercent, uint256 growthPercent, uint256 defensePercent, uint256 reservePercent)",
   "event CoupAttempted(uint256 indexed coupId, uint256 indexed cultId, address indexed instigator, address currentLeader, bool success)",
 ] as const;
+
+// CULTToken ABI
+export const CULT_TOKEN_ABI = [
+  "function name() view returns (string)",
+  "function symbol() view returns (string)",
+  "function decimals() view returns (uint8)",
+  "function totalSupply() view returns (uint256)",
+  "function balanceOf(address account) view returns (uint256)",
+  "function transfer(address to, uint256 value) returns (bool)",
+  "function approve(address spender, uint256 value) returns (bool)",
+  "function transferFrom(address from, address to, uint256 value) returns (bool)",
+  "function allowance(address owner, address spender) view returns (uint256)",
+  "function burn(uint256 amount)",
+  "function payDeployFee(address treasuryTarget)",
+  "function faucet(address to, uint256 amount)",
+  "function owner() view returns (address)",
+  "function lastFaucetClaim(address) view returns (uint256)",
+  "event Transfer(address indexed from, address indexed to, uint256 value)",
+  "event Approval(address indexed owner, address indexed spender, uint256 value)",
+  "event FaucetClaimed(address indexed to, uint256 amount)",
+  "event DeployFeePaid(address indexed deployer, uint256 burned, uint256 treasury, uint256 staking)",
+] as const;

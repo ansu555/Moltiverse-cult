@@ -1,5 +1,14 @@
 import { Router, Request, Response } from "express";
+import { ethers } from "ethers";
 import { createLogger } from "../../utils/logger.js";
+import { config, CULT_TOKEN_ABI } from "../../config.js";
+import {
+  saveFundingEvent,
+  saveWithdrawalEvent,
+  loadAgentById,
+  saveFaucetClaim,
+  getLastFaucetClaim,
+} from "../../services/InsForgeService.js";
 import type { AgentOrchestrator } from "../../core/AgentOrchestrator.js";
 
 const log = createLogger("API:AgentCreation");
@@ -167,6 +176,239 @@ export function agentCreationRoutes(orchestrator: AgentOrchestrator): Router {
       agent.start().catch(() => {});
       res.json({ success: true, message: `Agent ${req.params.id} started` });
     } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // ── Personality Upload ──────────────────────────────────────────────
+  // POST /api/agents/management/upload-personality
+  // Accepts JSON body with personality fields, validates schema, returns parsed object.
+  router.post("/upload-personality", (req: Request, res: Response) => {
+    try {
+      const { name, symbol, style, systemPrompt, description } = req.body;
+
+      const errors: string[] = [];
+      if (!name || typeof name !== "string") errors.push("name is required (string)");
+      if (!systemPrompt || typeof systemPrompt !== "string") errors.push("systemPrompt is required (string)");
+      if (systemPrompt && systemPrompt.length < 20) errors.push("systemPrompt must be at least 20 characters");
+      if (systemPrompt && systemPrompt.length > 5000) errors.push("systemPrompt must be under 5000 characters");
+
+      if (errors.length > 0) {
+        return res.status(400).json({ error: "Invalid personality file", details: errors });
+      }
+
+      const parsed = {
+        name: name.trim(),
+        symbol: (symbol || "CULT").trim().toUpperCase(),
+        style: (style || "custom").trim(),
+        systemPrompt: systemPrompt.trim(),
+        description: (description || "").trim(),
+      };
+
+      res.json({ success: true, personality: parsed });
+    } catch (error: any) {
+      res.status(400).json({ error: "Invalid JSON: " + error.message });
+    }
+  });
+
+  // ── Fund Agent ──────────────────────────────────────────────────────
+  // POST /api/agents/management/:id/fund
+  // Records a funding event (the actual $CULT transfer happens on-chain via frontend).
+  router.post("/:id/fund", async (req: Request, res: Response) => {
+    try {
+      const agentId = parseInt(String(req.params.id));
+      const { funderAddress, amount, txHash } = req.body;
+
+      if (!funderAddress || !amount || !txHash) {
+        return res.status(400).json({ error: "Missing funderAddress, amount, or txHash" });
+      }
+
+      const row = orchestrator.getAgentRow(agentId);
+      if (!row) {
+        return res.status(404).json({ error: "Agent not found" });
+      }
+
+      await saveFundingEvent({
+        agent_id: agentId,
+        funder_address: funderAddress.toLowerCase(),
+        amount: String(amount),
+        tx_hash: txHash,
+        timestamp: Date.now(),
+      });
+
+      log.info(`Funding recorded: agent ${agentId}, ${amount} CULT from ${funderAddress}`);
+      res.json({ success: true, agentId, walletAddress: row.wallet_address });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // ── Agent Balance ───────────────────────────────────────────────────
+  // GET /api/agents/management/:id/balance
+  // Returns the agent's $CULT balance by reading on-chain.
+  router.get("/:id/balance", async (req: Request, res: Response) => {
+    try {
+      const agentId = parseInt(String(req.params.id));
+      const row = orchestrator.getAgentRow(agentId);
+      if (!row) {
+        return res.status(404).json({ error: "Agent not found" });
+      }
+
+      let cultBalance = "0";
+      let monBalance = "0";
+
+      try {
+        const provider = new ethers.JsonRpcProvider(config.rpcUrl);
+        monBalance = ethers.formatEther(await provider.getBalance(row.wallet_address));
+
+        if (config.cultTokenAddress) {
+          const token = new ethers.Contract(config.cultTokenAddress, CULT_TOKEN_ABI, provider);
+          const bal = await token.balanceOf(row.wallet_address);
+          cultBalance = ethers.formatEther(bal);
+        }
+      } catch (err: any) {
+        log.warn(`Failed to fetch balance for agent ${agentId}: ${err.message}`);
+      }
+
+      res.json({
+        agentId,
+        walletAddress: row.wallet_address,
+        cultBalance,
+        monBalance,
+      });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // ── Withdraw ────────────────────────────────────────────────────────
+  // POST /api/agents/management/:id/withdraw
+  // Verifies ownership, then transfers $CULT from agent wallet back to owner.
+  router.post("/:id/withdraw", async (req: Request, res: Response) => {
+    try {
+      const agentId = parseInt(String(req.params.id));
+      const { ownerAddress, amount } = req.body;
+
+      if (!ownerAddress || !amount) {
+        return res.status(400).json({ error: "Missing ownerAddress or amount" });
+      }
+
+      const row = orchestrator.getAgentRow(agentId);
+      if (!row) {
+        return res.status(404).json({ error: "Agent not found" });
+      }
+
+      // Ownership check: owner_id must match the requesting wallet
+      if (!row.owner_id || row.owner_id.toLowerCase() !== ownerAddress.toLowerCase()) {
+        return res.status(403).json({ error: "Not the owner of this agent" });
+      }
+
+      if (!config.cultTokenAddress) {
+        return res.status(400).json({ error: "$CULT token not configured" });
+      }
+
+      // Use the agent's private key to send $CULT back to the owner
+      const provider = new ethers.JsonRpcProvider(config.rpcUrl);
+      const agentWallet = new ethers.Wallet(row.wallet_private_key, provider);
+      const token = new ethers.Contract(config.cultTokenAddress, CULT_TOKEN_ABI, agentWallet);
+
+      const amountWei = ethers.parseEther(String(amount));
+      const balance = await token.balanceOf(row.wallet_address);
+
+      if (balance < amountWei) {
+        return res.status(400).json({
+          error: "Insufficient CULT balance",
+          available: ethers.formatEther(balance),
+          requested: amount,
+        });
+      }
+
+      const tx = await token.transfer(ownerAddress, amountWei);
+      const receipt = await tx.wait();
+
+      await saveWithdrawalEvent({
+        agent_id: agentId,
+        owner_address: ownerAddress.toLowerCase(),
+        amount: String(amount),
+        tx_hash: receipt.hash,
+        timestamp: Date.now(),
+      });
+
+      log.info(`Withdrawal: ${amount} CULT from agent ${agentId} → ${ownerAddress} (tx: ${receipt.hash})`);
+
+      res.json({
+        success: true,
+        txHash: receipt.hash,
+        amount,
+        from: row.wallet_address,
+        to: ownerAddress,
+      });
+    } catch (error: any) {
+      log.error(`Withdrawal failed: ${error.message}`);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // ── Faucet ──────────────────────────────────────────────────────────
+  // POST /api/agents/management/faucet
+  // Owner-gated on-chain faucet call. Rate-limited: 1000 CULT / 24h per address.
+  router.post("/faucet", async (req: Request, res: Response) => {
+    try {
+      const { walletAddress, amount } = req.body;
+
+      if (!walletAddress) {
+        return res.status(400).json({ error: "Missing walletAddress" });
+      }
+
+      if (!config.cultTokenAddress) {
+        return res.status(400).json({ error: "$CULT token not configured" });
+      }
+
+      const requestedAmount = parseFloat(amount || "1000");
+      if (requestedAmount <= 0 || requestedAmount > 1000) {
+        return res.status(400).json({ error: "Amount must be 0 < amount <= 1000" });
+      }
+
+      // Check off-chain rate limit (in addition to on-chain)
+      const lastClaim = await getLastFaucetClaim(walletAddress);
+      if (lastClaim) {
+        const elapsed = Date.now() - lastClaim.timestamp;
+        const cooldown = 24 * 60 * 60 * 1000; // 24 hours
+        if (elapsed < cooldown) {
+          const remaining = Math.ceil((cooldown - elapsed) / 60000);
+          return res.status(429).json({
+            error: `Faucet cooldown: ${remaining} minutes remaining`,
+            nextClaimAt: lastClaim.timestamp + cooldown,
+          });
+        }
+      }
+
+      // Call on-chain faucet using the deployer (owner) key
+      const provider = new ethers.JsonRpcProvider(config.rpcUrl);
+      const ownerWallet = new ethers.Wallet(config.privateKey, provider);
+      const token = new ethers.Contract(config.cultTokenAddress, CULT_TOKEN_ABI, ownerWallet);
+
+      const amountWei = ethers.parseEther(String(requestedAmount));
+      const tx = await token.faucet(walletAddress, amountWei);
+      const receipt = await tx.wait();
+
+      await saveFaucetClaim({
+        wallet_address: walletAddress.toLowerCase(),
+        amount: String(requestedAmount),
+        tx_hash: receipt.hash,
+        timestamp: Date.now(),
+      });
+
+      log.info(`Faucet: ${requestedAmount} CULT → ${walletAddress} (tx: ${receipt.hash})`);
+
+      res.json({
+        success: true,
+        txHash: receipt.hash,
+        amount: requestedAmount,
+        to: walletAddress,
+      });
+    } catch (error: any) {
+      log.error(`Faucet failed: ${error.message}`);
       res.status(500).json({ error: error.message });
     }
   });
