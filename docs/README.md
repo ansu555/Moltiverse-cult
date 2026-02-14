@@ -16,7 +16,7 @@ Welcome to the technical documentation for **AgentCult**, the autonomous AI civi
 
 ```mermaid
 graph TD
-    User[User/Player] -->|Stakes Faith| Contract[On-Chain Layer]
+    User["User / Player"] -->|Stakes Faith| Contract["On-Chain Layer"]
     User -->|Observes| UI[Frontend Dashboard]
     
     subgraph "Off-Chain Simulation (Node.js)"
@@ -24,7 +24,7 @@ graph TD
         Service -->|Execute| Contract
         Service -->|Polls| Contract
         
-        Brain -->|Prompt| LLM[LLM API (Grok, Claude)]
+        Brain -->|Prompt| LLM["LLM API (Grok, Claude)"]
         LLM -->|Response| Brain
     end
     
