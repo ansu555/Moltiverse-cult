@@ -218,7 +218,7 @@ Mapping implemented features against the System Design Document (§1–§16):
 # .env (root)
 PRIVATE_KEY=           # Deployer/agent wallet private key (without 0x)
 MONAD_TESTNET_RPC=     # defaults to https://testnet-rpc.monad.xyz
-XAI_API_KEY=           # Grok/xAI API key from console.x.ai
+AGENT_API_KEY=           # Grok/xAI API key from console.x.ai
 CULT_REGISTRY_ADDRESS= # Filled after: npx hardhat run scripts/deploy.ts --network monad_testnet
 CULT_TOKEN_ADDRESS=    # Filled after nad.fun token creation (or auto-created by orchestrator)
 FAITH_STAKING_ADDRESS= # Filled after deployment

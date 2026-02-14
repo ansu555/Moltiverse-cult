@@ -1,5 +1,14 @@
 import dotenv from "dotenv";
-dotenv.config({ path: "../.env" });
+import path from "path";
+import { fileURLToPath } from "url";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const ROOT = path.resolve(__dirname, "../..");
+
+dotenv.config({ path: path.join(ROOT, ".env") });
+
+const DEFAULT_INSFORGE_ANON_KEY =
+  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3OC0xMjM0LTU2NzgtOTBhYi1jZGVmMTIzNDU2NzgiLCJlbWFpbCI6ImFub25AaW5zZm9yZ2UuY29tIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzEwMjgwMjl9.G0rTXpmGTYLev5WFPfECXwVWx4-SzfASM-HfnmW-Kdc";
 
 export const config = {
   // Chain
@@ -16,10 +25,10 @@ export const config = {
   nadFunLens: "0x7e78A8DE94f21804F7a17F4E8BF9EC2c872187ea",
   nadFunApiBase: "https://testnet-bot-api-server.nad.fun",
 
-  // xAI / Grok (default — agents can override with their own keys)
-  xaiApiKey: process.env.XAI_API_KEY || "",
-  xaiBaseUrl: "https://api.x.ai/v1",
-  xaiModel: "grok-3-fast",
+  // LLM defaults (agents can override with their own keys)
+  AgentApiKey: process.env.AGENT_API_KEY || process.env.XAI_API_KEY || "",
+  AgentBaseUrl: process.env.AGENT_BASE_URL || process.env.XAI_BASE_URL || "https://openrouter.ai/api/v1",
+  AgentModel: process.env.AGENT_MODEL || process.env.XAI_MODEL || "openrouter/aurora-alpha",
 
   // Agent
   agentLoopInterval: 30000, // 30 seconds
@@ -33,7 +42,14 @@ export const config = {
 
   // InsForge Backend (persistent storage)
   insforgeBaseUrl: process.env.INSFORGE_BASE_URL || "https://3wcyg4ax.us-east.insforge.app",
-  insforgeAnonKey: process.env.INSFORGE_ANON_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3OC0xMjM0LTU2NzgtOTBhYi1jZGVmMTIzNDU2NzgiLCJlbWFpbCI6ImFub25AaW5zZm9yZ2UuY29tIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzEwMjgwMjl9.G0rTXpmGTYLev5WFPfECXwVWx4-SzfASM-HfnmW-Kdc",
+  insforgeAnonKey: process.env.INSFORGE_ANON_KEY || DEFAULT_INSFORGE_ANON_KEY,
+  insforgeApiKey: process.env.INSFORGE_API_KEY || "",
+  insforgeDbKey: process.env.INSFORGE_ANON_KEY || process.env.INSFORGE_API_KEY || DEFAULT_INSFORGE_ANON_KEY,
+  insforgeDbKeyMode: process.env.INSFORGE_ANON_KEY
+    ? "anon"
+    : process.env.INSFORGE_API_KEY
+      ? "api_fallback"
+      : "default_anon_fallback",
 
   // Imgflip API (meme generation)
   imgflipUsername: process.env.IMGFLIP_USERNAME || "imgflip_hubot",

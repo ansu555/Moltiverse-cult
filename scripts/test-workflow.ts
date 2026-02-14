@@ -33,7 +33,7 @@ const CULT_REGISTRY = process.env.CULT_REGISTRY_ADDRESS || "";
 const PRIVATE_KEY = process.env.PRIVATE_KEY || "";
 const INSFORGE_BASE_URL = process.env.INSFORGE_BASE_URL || "";
 const INSFORGE_ANON_KEY = process.env.INSFORGE_ANON_KEY || "";
-const XAI_API_KEY = process.env.XAI_API_KEY || "";
+const AGENT_API_KEY = process.env.AGENT_API_KEY || "";
 
 const AUTO_FIX = process.argv.includes("--fix");
 const QUICK = process.argv.includes("--quick");
@@ -163,10 +163,10 @@ async function testEnvVars() {
       : "Missing — agents cannot interact with CultRegistry contract",
   });
 
-  // XAI_API_KEY
-  const hasXai = !!XAI_API_KEY;
+  // AGENT_API_KEY
+  const hasXai = !!AGENT_API_KEY;
   record({
-    name: "XAI_API_KEY",
+    name: "AGENT_API_KEY",
     passed: true,
     warning: !hasXai,
     message: hasXai
@@ -743,14 +743,14 @@ async function testCodeHealth() {
 async function testLLM() {
   section("8. LLM / xAI Connectivity");
 
-  if (!XAI_API_KEY) {
+  if (!AGENT_API_KEY) {
     record({
       name: "xAI API key",
       passed: true,
       warning: true,
-      message: "XAI_API_KEY not set — agents will use fallback responses (no LLM intelligence)",
+      message: "AGENT_API_KEY not set — agents will use fallback responses (no LLM intelligence)",
     });
-    log(INFO, "To enable smart agent decisions, set XAI_API_KEY in .env");
+    log(INFO, "To enable smart agent decisions, set AGENT_API_KEY in .env");
     return;
   }
 
@@ -765,14 +765,14 @@ async function testLLM() {
   }
 
   try {
-    const res = await fetch("https://api.x.ai/v1/chat/completions", {
+    const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${XAI_API_KEY}`,
+        Authorization: `Bearer ${AGENT_API_KEY}`,
       },
       body: JSON.stringify({
-        model: "grok-3-fast",
+        model: "openrouter/aurora-alpha",
         messages: [{ role: "user", content: "Say 'test ok' in exactly 2 words." }],
         max_tokens: 10,
       }),

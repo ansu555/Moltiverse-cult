@@ -15,9 +15,11 @@ export function getInsForgeClient() {
   if (!_client) {
     _client = createClient({
       baseUrl: config.insforgeBaseUrl,
-      anonKey: config.insforgeAnonKey,
+      anonKey: config.insforgeDbKey,
     });
-    log.info(`InsForge client initialized → ${config.insforgeBaseUrl}`);
+    log.info(
+      `InsForge client initialized → ${config.insforgeBaseUrl} (dbKeyMode=${config.insforgeDbKeyMode})`,
+    );
   }
   return _client;
 }
@@ -101,8 +103,8 @@ export async function createAgent(input: CreateAgentInput): Promise<AgentRow> {
     wallet_address: walletAddress,
     wallet_private_key: walletPrivateKey,
     llm_api_key: input.llm_api_key || null,
-    llm_base_url: input.llm_base_url || "https://api.x.ai/v1",
-    llm_model: input.llm_model || "grok-3-fast",
+    llm_base_url: input.llm_base_url || "https://openrouter.ai/api/v1",
+    llm_model: input.llm_model || "openrouter/aurora-alpha",
     token_address: input.token_address || ethers.ZeroAddress,
     status: "active",
     dead: false,

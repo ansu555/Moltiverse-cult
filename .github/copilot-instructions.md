@@ -138,7 +138,7 @@ try {
   return { action: "idle", reason: "LLM unavailable" };
 }
 ```
-LLM uses OpenAI SDK → `api.x.ai/v1` with model `grok-3-fast`. Fallback
+LLM uses OpenAI SDK → `api.x.ai/v1` with model `openrouter/aurora-alpha`. Fallback
 responses ensure agents always progress.
 
 **Per-agent wallets**: Each agent row in InsForge DB has `wallet_address` +
@@ -231,7 +231,7 @@ Root `.env` (read by `agent/src/config.ts` via `dotenv`):
   `mcp_insforge_get-anon-key` MCP tool or InsForge console.
 
 **Optional**:
-- `XAI_API_KEY` — Grok LLM key (agents use fallback responses if missing)
+- `AGENT_API_KEY` — Grok LLM key (agents use fallback responses if missing)
 - `GOVERNANCE_ENGINE_ADDRESS`, `CULT_TOKEN_ADDRESS` — Other contracts
 - `INSFORGE_BASE_URL` — Default: `https://3wcyg4ax.us-east.insforge.app`
 

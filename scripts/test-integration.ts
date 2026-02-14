@@ -4,7 +4,7 @@
  * ║                                                                    ║
  * ║  Tests ALL backend subsystems with REAL intended output checks.    ║
  * ║  Uses two distinct wallets, real on-chain calls, real InsForge DB. ║
- * ║  LLM calls go to OpenRouter (Grok-3-fast compatible).             ║
+ * ║  LLM calls go to OpenRouter (openrouter/aurora-alpha compatible).             ║
  * ╚══════════════════════════════════════════════════════════════════════╝
  *
  *  Usage:  npx tsx scripts/test-integration.ts
@@ -12,7 +12,13 @@
 
 import { ethers } from "ethers";
 import dotenv from "dotenv";
-dotenv.config({ path: ".env" });
+import path from "path";
+import { fileURLToPath } from "url";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const ROOT = path.resolve(__dirname, "..");
+
+dotenv.config({ path: path.join(ROOT, ".env") });
 
 // ── CONFIG ───────────────────────────────────────────────────────────
 const RPC_URL = process.env.MONAD_TESTNET_RPC || "https://testnet-rpc.monad.xyz";
@@ -21,15 +27,18 @@ const CULT_REGISTRY_ADDRESS = process.env.CULT_REGISTRY_ADDRESS || "";
 const GOVERNANCE_ENGINE_ADDRESS = process.env.GOVERNANCE_ENGINE_ADDRESS || "";
 const INSFORGE_BASE_URL = process.env.INSFORGE_BASE_URL || "https://3wcyg4ax.us-east.insforge.app";
 const INSFORGE_ANON_KEY = process.env.INSFORGE_ANON_KEY || "";
+const INSFORGE_API_KEY = process.env.INSFORGE_API_KEY || "";
+const INSFORGE_DB_KEY = INSFORGE_ANON_KEY || INSFORGE_API_KEY;
+const INSFORGE_DB_KEY_MODE = INSFORGE_ANON_KEY ? "anon" : INSFORGE_API_KEY ? "api_fallback" : "missing";
 
 // Two wallets for multi-user testing
 const WALLET_1_KEY = process.env.PRIVATE_KEY || "";
 const WALLET_2_KEY = "0xf549ba4bacfea10f30759c826edebed337d0fb97090c387a27685e4850203627";
 
 // OpenRouter API
-const LLM_API_KEY = process.env.XAI_API_KEY || "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";
-const LLM_BASE_URL = process.env.XAI_BASE_URL || "https://openrouter.ai/api/v1";
-const LLM_MODEL = process.env.XAI_MODEL || "openai/gpt-3.5-turbo";
+const LLM_API_KEY = process.env.AGENT_API_KEY ||  "";
+const LLM_BASE_URL = process.env.AGENT_BASE_URL || "https://openrouter.ai/api/v1";
+const LLM_MODEL = process.env.AGENT_MODEL || "openrouter/aurora-alpha";
 
 // Track whether LLM is available (tested in Suite 1)
 let LLM_AVAILABLE = false;
@@ -130,12 +139,9 @@ function assertIncludes(name: string, arr: string[], value: string) {
 // ── InsForge DB Client ──────────────────────────────────────────────
 import { createClient } from "@insforge/sdk";
 
-const INSFORGE_API_KEY = process.env.INSFORGE_API_KEY || "";
-
 function getDB() {
-  // Use admin API key for write operations (anon role lacks sequence permissions)
-  const key = INSFORGE_API_KEY || INSFORGE_ANON_KEY;
-  return createClient({ baseUrl: INSFORGE_BASE_URL, anonKey: key }).database;
+  // This backend is configured with anon sequence usage; keep anon as the primary DB key.
+  return createClient({ baseUrl: INSFORGE_BASE_URL, anonKey: INSFORGE_DB_KEY }).database;
 }
 
 // ── LLM Client (OpenRouter) ─────────────────────────────────────────
@@ -239,7 +245,7 @@ async function suite1_Foundation() {
     LLM_AVAILABLE = true;
   } catch (err: any) {
     if (err.message?.includes("402") || err.message?.includes("Insufficient credits") || err.message?.includes("No allowed providers") || err.message?.includes("authenticate") || err.message?.includes("401") || err.message?.includes("502")) {
-      skip("LLM connectivity", `Account/auth issue: ${err.message.slice(0, 80)}. Set XAI_API_KEY with valid credentials.`);
+      skip("LLM connectivity", `Account/auth issue: ${err.message.slice(0, 80)}. Set AGENT_API_KEY with valid credentials.`);
     } else {
       fail("LLM connectivity", "reachable", err.message);
     }
@@ -512,7 +518,7 @@ async function suite4_LLMDecision() {
   section("SUITE 4: LLM Decision Engine");
 
   if (!LLM_AVAILABLE) {
-    skip("All LLM tests", "LLM API not available (no credits or invalid key). Set XAI_API_KEY.");
+    skip("All LLM tests", "LLM API not available (no credits or invalid key). Set AGENT_API_KEY.");
 
     // Still validate the FALLBACK behavior (same as production)
     subsection("4.F Fallback Decision Pattern (Production Resilience)");
@@ -1611,6 +1617,7 @@ async function main() {
   console.log(`  Registry: ${CULT_REGISTRY_ADDRESS}`);
   console.log(`  Gov:      ${GOVERNANCE_ENGINE_ADDRESS || "(not set)"}`);
   console.log(`  InsForge: ${INSFORGE_BASE_URL}`);
+  console.log(`  DB Key:   ${INSFORGE_DB_KEY_MODE}`);
   console.log(`  Wallet 1: ${new ethers.Wallet(WALLET_1_KEY).address}`);
   console.log(`  Wallet 2: ${new ethers.Wallet(WALLET_2_KEY).address}`);
   console.log(`  LLM:      ${LLM_BASE_URL} (${LLM_MODEL})`);

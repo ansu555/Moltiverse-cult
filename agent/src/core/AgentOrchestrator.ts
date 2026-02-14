@@ -171,7 +171,7 @@ export class AgentOrchestrator {
       wallet: row.wallet_address,
       dbId: row.id,
       cultId: row.cult_id ?? "(pending registration)",
-      llm: row.llm_model || "default (grok-3-fast)",
+      llm: row.llm_model || "default (openrouter/aurora-alpha)",
     });
 
     const personality: Personality = {

@@ -28,7 +28,7 @@ const log = createLogger("API:AgentCreation");
  *   "description": "A cult for the boldest degens",
  *   "llmApiKey": "xai-...",          // optional — uses default if omitted
  *   "llmBaseUrl": "https://...",       // optional
- *   "llmModel": "grok-3-fast",        // optional
+ *   "llmModel": "openrouter/aurora-alpha",        // optional
  *   "walletPrivateKey": "0x...",       // optional — generates new if omitted
  *   "ownerId": "user123"              // optional — for multi-user support
  * }

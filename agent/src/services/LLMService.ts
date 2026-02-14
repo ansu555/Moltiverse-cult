@@ -34,9 +34,9 @@ export class LLMService {
   public cultId: number = -1;
 
   constructor(llmConfig?: LLMConfig) {
-    const apiKey = llmConfig?.apiKey || config.xaiApiKey;
-    const baseUrl = llmConfig?.baseUrl || config.xaiBaseUrl;
-    this.model = llmConfig?.model || config.xaiModel;
+    const apiKey = llmConfig?.apiKey || config.AgentApiKey;
+    const baseUrl = llmConfig?.baseUrl || config.AgentBaseUrl;
+    this.model = llmConfig?.model || config.AgentModel;
 
     this.client = new OpenAI({
       apiKey,
