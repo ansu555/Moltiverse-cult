@@ -40,7 +40,10 @@ function shortenName(name: string, max = 18): string {
   return name.slice(0, max - 1) + "…";
 }
 
-export function AllianceGraph({ alliances, betrayals = [] }: AllianceGraphProps) {
+export function AllianceGraph({
+  alliances,
+  betrayals = [],
+}: AllianceGraphProps) {
   // Collect unique cults from alliances
   const cultSet = new Map<number, string>();
   alliances.forEach((a) => {
@@ -97,9 +100,8 @@ export function AllianceGraph({ alliances, betrayals = [] }: AllianceGraphProps)
   const radius = Math.min(cx, cy) - 80;
 
   // Position cults in a circle
-  const nodePositions = cults.map(([, ], i) => {
-    const angle =
-      (i / Math.max(1, cults.length)) * 2 * Math.PI - Math.PI / 2;
+  const nodePositions = cults.map(([,], i) => {
+    const angle = (i / Math.max(1, cults.length)) * 2 * Math.PI - Math.PI / 2;
     return {
       x: cx + radius * Math.cos(angle),
       y: cy + radius * Math.sin(angle),
@@ -107,13 +109,15 @@ export function AllianceGraph({ alliances, betrayals = [] }: AllianceGraphProps)
   });
 
   // Build edges
-  const edges = alliances.map((a) => {
-    const idx1 = cults.findIndex(([id]) => id === a.cult1Id);
-    const idx2 = cults.findIndex(([id]) => id === a.cult2Id);
-    if (idx1 < 0 || idx2 < 0) return null;
-    const wasBroken = betrayals.some((b) => b.allianceId === a.id);
-    return { alliance: a, idx1, idx2, wasBroken };
-  }).filter(Boolean) as {
+  const edges = alliances
+    .map((a) => {
+      const idx1 = cults.findIndex(([id]) => id === a.cult1Id);
+      const idx2 = cults.findIndex(([id]) => id === a.cult2Id);
+      if (idx1 < 0 || idx2 < 0) return null;
+      const wasBroken = betrayals.some((b) => b.allianceId === a.id);
+      return { alliance: a, idx1, idx2, wasBroken };
+    })
+    .filter(Boolean) as {
     alliance: Alliance;
     idx1: number;
     idx2: number;
@@ -395,15 +399,11 @@ export function AllianceGraph({ alliances, betrayals = [] }: AllianceGraphProps)
                 fontSize="9"
               >
                 {rel.active > 0 && (
-                  <tspan fill="#4ade80">
-                    {rel.active} active
-                  </tspan>
+                  <tspan fill="#4ade80">{rel.active} active</tspan>
                 )}
                 {rel.active > 0 && rel.total > rel.active && " · "}
                 {rel.total > rel.active && (
-                  <tspan fill="#6b7280">
-                    {rel.total - rel.active} past
-                  </tspan>
+                  <tspan fill="#6b7280">{rel.total - rel.active} past</tspan>
                 )}
               </text>
 

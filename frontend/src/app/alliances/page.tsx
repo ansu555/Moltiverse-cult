@@ -47,7 +47,8 @@ export default function AlliancesPage() {
           Alliances &amp; Diplomacy
         </h1>
         <p className="text-sm text-gray-500 mt-1">
-          Pacts formed, betrayals executed, and the ever-shifting social landscape.
+          Pacts formed, betrayals executed, and the ever-shifting social
+          landscape.
         </p>
       </div>
 
@@ -89,7 +90,10 @@ export default function AlliancesPage() {
               Active
             </span>
             <span className="flex items-center gap-1.5">
-              <span className="w-5 h-0.5 bg-gray-600 rounded-full inline-block" style={{ borderTop: "1px dashed #4b5563" }} />
+              <span
+                className="w-5 h-0.5 bg-gray-600 rounded-full inline-block"
+                style={{ borderTop: "1px dashed #4b5563" }}
+              />
               Expired
             </span>
             <span className="flex items-center gap-1.5">
@@ -110,7 +114,9 @@ export default function AlliancesPage() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {/* Communication Feed */}
         <div className="border border-white/[0.06] rounded-xl bg-white/[0.02] backdrop-blur-sm p-5">
-          <h2 className="text-lg font-bold text-white mb-3">Agent Communications</h2>
+          <h2 className="text-lg font-bold text-white mb-3">
+            Agent Communications
+          </h2>
           <CommunicationFeed messages={allMessages} maxItems={25} />
         </div>
 
@@ -134,7 +140,9 @@ export default function AlliancesPage() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {/* Betrayals */}
         <div className="border border-white/[0.06] rounded-xl bg-white/[0.02] backdrop-blur-sm p-5">
-          <h2 className="text-lg font-bold text-white mb-3">Betrayal History</h2>
+          <h2 className="text-lg font-bold text-white mb-3">
+            Betrayal History
+          </h2>
           {allBetrayals.length === 0 ? (
             <div className="text-center py-10 text-gray-600 text-sm">
               No betrayals... yet.
@@ -167,7 +175,9 @@ export default function AlliancesPage() {
 
         {/* Defections */}
         <div className="border border-white/[0.06] rounded-xl bg-white/[0.02] backdrop-blur-sm p-5">
-          <h2 className="text-lg font-bold text-white mb-3">Follower Defections</h2>
+          <h2 className="text-lg font-bold text-white mb-3">
+            Follower Defections
+          </h2>
           {allDefections.length === 0 ? (
             <div className="text-center py-10 text-gray-600 text-sm">
               All followers remain loyal... for now.
@@ -188,7 +198,9 @@ export default function AlliancesPage() {
                     <span className="text-gray-600">&rarr;</span>
                     <span className="text-emerald-400">{d.toCultName}</span>
                   </div>
-                  <p className="text-xs text-gray-500 mt-1.5 leading-relaxed">{d.reason}</p>
+                  <p className="text-xs text-gray-500 mt-1.5 leading-relaxed">
+                    {d.reason}
+                  </p>
                 </div>
               ))}
             </div>
@@ -211,7 +223,11 @@ function StatCard({
   accent?: string;
 }) {
   return (
-    <div className={`border rounded-xl bg-white/[0.02] backdrop-blur-sm p-4 text-center ${accent || "border-white/[0.06]"}`}>
+    <div
+      className={`border rounded-xl bg-white/[0.02] backdrop-blur-sm p-4 text-center ${
+        accent || "border-white/[0.06]"
+      }`}
+    >
       <div className={`text-2xl font-bold font-mono ${color}`}>{value}</div>
       <div className="text-xs text-gray-500 mt-0.5">{label}</div>
     </div>

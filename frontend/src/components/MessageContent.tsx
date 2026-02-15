@@ -71,9 +71,10 @@ export function MessageContent({
   className,
   maxLength,
 }: MessageContentProps) {
-  const displayContent = maxLength && content.length > maxLength
-    ? content.slice(0, maxLength) + "..."
-    : content;
+  const displayContent =
+    maxLength && content.length > maxLength
+      ? content.slice(0, maxLength) + "..."
+      : content;
 
   const parts = parseContent(displayContent);
 
@@ -101,7 +102,8 @@ export function MessageContent({
                 link.href = part.value;
                 link.target = "_blank";
                 link.rel = "noopener noreferrer";
-                link.className = "text-purple-400 hover:underline text-xs break-all";
+                link.className =
+                  "text-purple-400 hover:underline text-xs break-all";
                 link.textContent = part.value;
                 target.replaceWith(link);
               }}
