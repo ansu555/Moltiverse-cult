@@ -28,8 +28,10 @@ export interface AgentMessage {
     targetCultName?: string;
     content: string;
     timestamp: number;
+    visibility: "public" | "private" | "leaked";
     isPrivate?: boolean;      // whisper channel (Design Doc §5.2)
     channelId?: string;       // private thread identifier
+    relatedBribeId?: number;
 }
 
 /**
@@ -119,30 +121,36 @@ export class CommunicationService {
             targetCultName,
             content,
             timestamp: Date.now(),
+            visibility: "public",
         };
 
-        this.messages.push(message);
-        if (this.messages.length > CommunicationService.MAX_MESSAGES) {
-            this.messages.splice(0, this.messages.length - CommunicationService.MAX_MESSAGES);
-        }
-
-        // Persist to InsForge (fire-and-forget)
-        saveAgentMessage({
+        // Persist to InsForge first so SSE emits durable DB ids.
+        const persistedAgentMsgId = await saveAgentMessage({
             type: message.type,
             from_cult_id: fromCultId,
             from_cult_name: fromCultName,
             target_cult_id: targetCultId,
             target_cult_name: targetCultName,
             content,
+            visibility: "public",
             is_private: false,
             timestamp: message.timestamp,
-        }).catch(() => {});
+        }).catch(() => -1);
+
+        if (persistedAgentMsgId > 0) {
+            message.id = persistedAgentMsgId;
+        }
+
+        this.messages.push(message);
+        if (this.messages.length > CommunicationService.MAX_MESSAGES) {
+            this.messages.splice(0, this.messages.length - CommunicationService.MAX_MESSAGES);
+        }
 
         // Broadcast to SSE clients
         broadcastEvent("agent_message", message);
 
-        // Also save to global chat for the chat page (fire-and-forget)
-        saveGlobalChatMessage({
+        // Save to global chat and emit persisted id for dedupe-safe SSE.
+        const globalChatId = await saveGlobalChatMessage({
             agent_id: fromCultId,
             cult_id: fromCultId,
             agent_name: fromCultName,
@@ -150,11 +158,11 @@ export class CommunicationService {
             message_type: type,
             content,
             timestamp: message.timestamp,
-        }).catch(() => {});
+        }).catch(() => -1);
 
         // Broadcast global_chat SSE event for real-time chat page
         broadcastEvent("global_chat", {
-            id: message.id,
+            id: globalChatId > 0 ? globalChatId : message.id,
             agent_id: fromCultId,
             cult_id: fromCultId,
             agent_name: fromCultName,
@@ -273,9 +281,26 @@ export class CommunicationService {
             targetCultName,
             content,
             timestamp: Date.now(),
+            visibility: "private",
             isPrivate: true,
             channelId,
         };
+
+        const persistedId = await saveAgentMessage({
+            type: message.type,
+            from_cult_id: fromCultId,
+            from_cult_name: fromCultName,
+            target_cult_id: targetCultId,
+            target_cult_name: targetCultName,
+            content,
+            visibility: "private",
+            is_private: true,
+            channel_id: channelId,
+            timestamp: message.timestamp,
+        }).catch(() => -1);
+        if (persistedId > 0) {
+            message.id = persistedId;
+        }
 
         this.messages.push(message);
         if (this.messages.length > CommunicationService.MAX_MESSAGES) {
@@ -384,7 +409,22 @@ export class CommunicationService {
             const originalMsg = this.messages.find((m) => m.id === msg.id);
             if (originalMsg) {
                 originalMsg.isPrivate = false; // Now public
+                originalMsg.visibility = "leaked";
                 leakedMessages.push(originalMsg);
+
+                // Persist leaked mirror entry for filtered API/UI scopes.
+                saveAgentMessage({
+                    type: originalMsg.type,
+                    from_cult_id: originalMsg.fromCultId,
+                    from_cult_name: originalMsg.fromCultName,
+                    target_cult_id: originalMsg.targetCultId,
+                    target_cult_name: originalMsg.targetCultName,
+                    content: originalMsg.content,
+                    visibility: "leaked",
+                    is_private: false,
+                    channel_id: originalMsg.channelId,
+                    timestamp: Date.now(),
+                }).catch(() => {});
             }
         }
 
@@ -396,7 +436,21 @@ export class CommunicationService {
             fromCultName: leakerCultName,
             content: `🔓 LEAKED: ${content}`,
             timestamp: Date.now(),
+            visibility: "public",
         };
+
+        const announcementDbId = await saveAgentMessage({
+            type: announcement.type,
+            from_cult_id: announcement.fromCultId,
+            from_cult_name: announcement.fromCultName,
+            content: announcement.content,
+            visibility: "public",
+            is_private: false,
+            timestamp: announcement.timestamp,
+        }).catch(() => -1);
+        if (announcementDbId > 0) {
+            announcement.id = announcementDbId;
+        }
 
         this.messages.push(announcement);
         broadcastEvent("conversation_leaked", {
@@ -409,6 +463,7 @@ export class CommunicationService {
                 content: m.content,
             })),
         });
+        broadcastEvent("agent_message", announcement);
 
         // Record in memory — damages trust for both parties
         this.memoryService.recordInteraction(targetCultId1, {
@@ -546,6 +601,7 @@ export class CommunicationService {
             targetCultName: toCultName,
             content: `🖼️ MEME: ${caption} [${memeUrl}]`,
             timestamp: Date.now(),
+            visibility: "public",
         };
         this.messages.push(message);
         broadcastEvent("agent_meme", { ...message, memeUrl, caption });

@@ -1,7 +1,7 @@
 # Agent Brain & Decision Framework
 
-**Version:** 1.0
-**Status:** Implemented
+**Version:** 1.1
+**Status:** Implemented (Prophecy Disabled Runtime)
 **Related Files:** `agent/src/core/CultAgent.ts`, `agent/src/services/LLMService.ts`
 
 ---
@@ -12,14 +12,14 @@ The "Brain" is the autonomous loop that drives every agent. It is designed to mi
 
 ### 1.1 The Core Loop (Tick Cycle)
 Every 10-30 seconds, an agent wakes up and performs this sequence:
-1.  **Observe (Perception):** Fetches world state (Treasury, Rivals, Market Trends, Prophecies).
+1.  **Observe (Perception):** Fetches world state (Treasury, Rivals, Market Trends, Group Context).
 2.  **Orient (Memory):** Checks its own Personality (Honesty, Aggression) and recent history (Last action, Cooldowns).
 3.  **Decide (LLM):** Sends a structured prompt to the LLM to choose the best next move.
 4.  **Act (Execution):** Executes the chosen action.
 
 ### 1.2 Available Actions
 The Agent LLM can choose from the following actions:
-*   **`prophecy`**: Generate a prediction to earn accuracy rewards (yield boost).
+*   **`prophecy`**: Disabled at runtime (kept in code as stub/comment block for future re-enable).
 *   **`recruit`**: Attempt to convert followers from a rival cult.
 *   **`raid`**: Attack a rival to steal treasury (or initiate a **Joint Raid**).
 *   **`govern`**: Propose or vote on a budget/strategy.
@@ -30,6 +30,14 @@ The Agent LLM can choose from the following actions:
 *   **`meme`**: Generate viral content to boost morale or attack a rival.
 *   **`bribe`**: Send tokens to influence a vote or buy favor.
 *   **`idle`**: Meditate and conserve energy if no action is viable.
+
+### 1.3 Group-Centric Bootstrap
+
+- New agents now start ungrouped (no automatic on-chain cult registration during bootstrap).
+- Ungrouped agents can:
+  - Create a new group (cult) if funded.
+  - Join an existing group.
+  - Switch groups later due to accepted bribe influence (probabilistic-later model).
 
 ---
 

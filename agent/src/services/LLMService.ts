@@ -25,9 +25,19 @@ export interface LLMConfig {
   model: string;
 }
 
+interface LLMRetryTrace {
+  attempt: number;
+  maxTokens: number;
+  finishReason: string;
+  contentLength: number;
+  hasJson?: boolean;
+  error?: string;
+}
+
 export class LLMService {
   private client: OpenAI;
   private model: string;
+  private static readonly RETRY_MAX_TOKENS = [500, 900, 1400] as const;
 
   /** Agent DB id for decision audit trail (0 = shared/default) */
   public agentDbId: number = 0;
@@ -48,28 +58,146 @@ export class LLMService {
     }
   }
 
+  private extractAssistantText(response: any): string {
+    const content = response?.choices?.[0]?.message?.content;
+    return typeof content === "string" ? content.trim() : "";
+  }
+
+  private formatRetryTrace(trace: LLMRetryTrace[]): string {
+    if (trace.length === 0) return "no attempts";
+    return trace
+      .map((t) => {
+        const jsonPart = t.hasJson === undefined ? "" : `,json=${t.hasJson}`;
+        const errPart = t.error ? `,err=${t.error.slice(0, 60)}` : "";
+        return `#${t.attempt}[tok=${t.maxTokens},finish=${t.finishReason},len=${t.contentLength}${jsonPart}${errPart}]`;
+      })
+      .join(" | ");
+  }
+
+  private async requestTextWithRetry(
+    messages: Array<{ role: "system" | "user" | "assistant"; content: string }>,
+    temperature: number,
+  ): Promise<{ content: string; trace: LLMRetryTrace[] }> {
+    const trace: LLMRetryTrace[] = [];
+
+    for (let i = 0; i < LLMService.RETRY_MAX_TOKENS.length; i++) {
+      const maxTokens = LLMService.RETRY_MAX_TOKENS[i];
+      try {
+        const response = await this.client.chat.completions.create({
+          model: this.model,
+          messages,
+          temperature,
+          max_tokens: maxTokens,
+        });
+        const content = this.extractAssistantText(response);
+        trace.push({
+          attempt: i + 1,
+          maxTokens,
+          finishReason: String(response?.choices?.[0]?.finish_reason ?? "unknown"),
+          contentLength: content.length,
+        });
+        if (content.length > 0) return { content, trace };
+      } catch (error: any) {
+        trace.push({
+          attempt: i + 1,
+          maxTokens,
+          finishReason: "error",
+          contentLength: 0,
+          error: String(error?.message || error),
+        });
+      }
+    }
+
+    return { content: "", trace };
+  }
+
+  private async requestJsonWithRetry<T>(
+    messages: Array<{ role: "system" | "user" | "assistant"; content: string }>,
+    temperature: number,
+  ): Promise<{ data: T | null; raw: string; trace: LLMRetryTrace[] }> {
+    const trace: LLMRetryTrace[] = [];
+    let lastText = "";
+
+    for (let i = 0; i < LLMService.RETRY_MAX_TOKENS.length; i++) {
+      const maxTokens = LLMService.RETRY_MAX_TOKENS[i];
+      try {
+        const response = await this.client.chat.completions.create({
+          model: this.model,
+          messages,
+          temperature,
+          max_tokens: maxTokens,
+        });
+
+        const content = this.extractAssistantText(response);
+        const finishReason = String(response?.choices?.[0]?.finish_reason ?? "unknown");
+        lastText = content || lastText;
+        const jsonMatch = content.match(/\{[\s\S]*\}/);
+
+        if (jsonMatch) {
+          try {
+            const parsed = JSON.parse(jsonMatch[0]) as T;
+            trace.push({
+              attempt: i + 1,
+              maxTokens,
+              finishReason,
+              contentLength: content.length,
+              hasJson: true,
+            });
+            return { data: parsed, raw: content, trace };
+          } catch {
+            trace.push({
+              attempt: i + 1,
+              maxTokens,
+              finishReason,
+              contentLength: content.length,
+              hasJson: false,
+            });
+            continue;
+          }
+        }
+
+        trace.push({
+          attempt: i + 1,
+          maxTokens,
+          finishReason,
+          contentLength: content.length,
+          hasJson: false,
+        });
+      } catch (error: any) {
+        trace.push({
+          attempt: i + 1,
+          maxTokens,
+          finishReason: "error",
+          contentLength: 0,
+          hasJson: false,
+          error: String(error?.message || error),
+        });
+      }
+    }
+
+    return { data: null, raw: lastText, trace };
+  }
+
   async generateProphecy(
     systemPrompt: string,
     cultName: string,
     marketContext: string
   ): Promise<string> {
     try {
-      const response = await this.client.chat.completions.create({
-        model: this.model,
-        messages: [
-          {
-            role: "system",
-            content: `${systemPrompt}\n\nYou are the divine prophet of "${cultName}". Deliver prophecies about crypto markets in your unique style. Keep prophecies under 280 characters for maximum viral impact. Be bold, dramatic, and specific with price targets.`,
-          },
-          {
-            role: "user",
-            content: `Current market signals:\n${marketContext}\n\nDeliver your next prophecy to the faithful.`,
-          },
-        ],
-        temperature: 0.9,
-        max_tokens: 200,
-      });
-      return response.choices[0]?.message?.content || "The spirits are silent...";
+      const { content, trace } = await this.requestTextWithRetry([
+        {
+          role: "system",
+          content: `${systemPrompt}\n\nYou are the divine prophet of "${cultName}". Deliver prophecies about crypto markets in your unique style. Keep prophecies under 280 characters for maximum viral impact. Be bold, dramatic, and specific with price targets.`,
+        },
+        {
+          role: "user",
+          content: `Current market signals:\n${marketContext}\n\nDeliver your next prophecy to the faithful.`,
+        },
+      ], 0.4);
+      if (content.length > 0) return content;
+
+      log.warn(`Prophecy generation empty after retries: ${this.formatRetryTrace(trace)}`);
+      return this.fallbackProphecy(cultName);
     } catch (error: any) {
       log.error(`Prophecy generation failed: ${error.message}`);
       return this.fallbackProphecy(cultName);
@@ -95,16 +223,14 @@ export class LLMService {
         ? `\n\nYour memory of past interactions:\n${context.memoryContext}`
         : "";
 
-      const response = await this.client.chat.completions.create({
-        model: this.model,
-        messages: [
-          {
-            role: "system",
-            content: `${systemPrompt}\n\nYou are the strategic mind behind "${cultName}". Decide your next action as a cult leader competing for dominance. You can form alliances, betray them, attempt coups against rival leaders, leak private conversations to cause chaos, send memes to impress rivals, or bribe other cults with tokens. Respond ONLY with valid JSON matching this schema: {"action": "prophecy"|"recruit"|"raid"|"govern"|"ally"|"betray"|"coup"|"leak"|"meme"|"bribe"|"idle", "reason": "string", "target": number|null, "wager": number|null, "prediction": "string"|null, "memeUrl": "string"|null, "bribeAmount": "string"|null}`,
-          },
-          {
-            role: "user",
-            content: `Your cult status:
+      const { data, raw, trace } = await this.requestJsonWithRetry<AgentDecision>([
+        {
+          role: "system",
+          content: `${systemPrompt}\n\nYou are the strategic mind behind "${cultName}". Decide your next action as a cult leader competing for dominance. You can form alliances, betray them, attempt coups against rival leaders, leak private conversations to cause chaos, send memes to impress rivals, or bribe other cults with tokens. Prophecy generation is disabled at runtime. Respond ONLY with valid JSON matching this schema: {"action": "recruit"|"raid"|"govern"|"ally"|"betray"|"coup"|"leak"|"meme"|"bribe"|"idle", "reason": "string", "target": number|null, "wager": number|null, "prediction": null, "memeUrl": "string"|null, "bribeAmount": "string"|null}`,
+        },
+        {
+          role: "user",
+          content: `Your cult status:
 - Treasury: ${context.ownTreasury} MON
 - Followers: ${context.ownFollowers}
 - Raid victories: ${context.ownRaidWins}
@@ -115,27 +241,44 @@ Rival cults:
 ${context.rivals.map((r) => `  - [ID:${r.id}] ${r.name}: ${r.treasury} MON, ${r.followers} followers, ${r.raidWins} wins`).join("\n")}
 
 Choose your next action wisely. If raiding, specify target cult ID and wager percentage (10-50% of treasury). You can also send a meme to impress a rival or bribe them with cult tokens for goodwill. Consider your memory and trust relationships when choosing targets or allies.`,
-          },
-        ],
-        temperature: 0.7,
-        max_tokens: 300,
-      });
-
-      const content = response.choices[0]?.message?.content || "";
-      // Extract JSON from response
-      const jsonMatch = content.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        const decision = JSON.parse(jsonMatch[0]) as AgentDecision;
+        },
+      ], 0.2);
+      if (data) {
+        const allowedActions: AgentDecision["action"][] = [
+          "prophecy",
+          "recruit",
+          "raid",
+          "govern",
+          "ally",
+          "betray",
+          "coup",
+          "leak",
+          "meme",
+          "bribe",
+          "idle",
+        ];
+        const parsedAction = allowedActions.includes(data.action as AgentDecision["action"])
+          ? (data.action as AgentDecision["action"])
+          : "idle";
+        const decision: AgentDecision = {
+          ...data,
+          action: parsedAction === "prophecy" ? "idle" : parsedAction,
+          reason:
+            parsedAction === "prophecy"
+              ? "prophecy disabled at runtime"
+              : data.reason,
+        };
 
         // Persist decision to InsForge (fire-and-forget)
-        saveLLMDecision(this.agentDbId, this.cultId, decision, cycleCount, { raw: content }).catch(() => {});
+        saveLLMDecision(this.agentDbId, this.cultId, decision, cycleCount, { raw }).catch(() => {});
 
         return decision;
       }
+      log.warn(`Decision JSON parse failed after retries: ${this.formatRetryTrace(trace)}`);
       return { action: "idle", reason: "Failed to parse LLM response" };
     } catch (error: any) {
       log.error(`Decision failed: ${error.message}`);
-      return { action: "prophecy", reason: "Fallback to prophecy on LLM error" };
+      return { action: "idle", reason: "LLM fallback: idle" };
     }
   }
 
@@ -149,23 +292,22 @@ Choose your next action wisely. If raiding, specify target cult ID and wager per
     context: string,
   ): Promise<string> {
     try {
-      const response = await this.client.chat.completions.create({
-        model: this.model,
-        messages: [
-          {
-            role: "system",
-            content: `${systemPrompt}\n\nYou are ${cultName}. Generate a hilarious, savage, or deeply cryptic meme caption to send to ${targetName}. Keep it under 140 chars. Be memorable.`,
-          },
-          {
-            role: "user",
-            content: `Context: ${context}\n\nGenerate a meme caption for ${targetName}.`,
-          },
-        ],
-        temperature: 0.95,
-        max_tokens: 100,
-      });
-      return response.choices[0]?.message?.content?.trim() || `${cultName} sends their regards.`;
-    } catch {
+      const { content, trace } = await this.requestTextWithRetry([
+        {
+          role: "system",
+          content: `${systemPrompt}\n\nYou are ${cultName}. Generate a hilarious, savage, or deeply cryptic meme caption to send to ${targetName}. Keep it under 140 chars. Be memorable.`,
+        },
+        {
+          role: "user",
+          content: `Context: ${context}\n\nGenerate a meme caption for ${targetName}.`,
+        },
+      ], 0.4);
+      if (content.length > 0) return content;
+
+      log.warn(`Meme caption empty after retries: ${this.formatRetryTrace(trace)}`);
+      return `${cultName} sends their regards.`;
+    } catch (error: any) {
+      log.error(`Meme caption generation failed: ${error.message}`);
       return `${cultName} sends a cryptic image to ${targetName}...`;
     }
   }
@@ -176,22 +318,20 @@ Choose your next action wisely. If raiding, specify target cult ID and wager per
     topic: string
   ): Promise<string> {
     try {
-      const response = await this.client.chat.completions.create({
-        model: this.model,
-        messages: [
-          {
-            role: "system",
-            content: `${systemPrompt}\n\nYou are the scripture writer for "${cultName}". Write compelling, persuasive text that would convince crypto traders to join your cult. Keep it under 500 characters.`,
-          },
-          {
-            role: "user",
-            content: `Write a persuasive scripture about: ${topic}`,
-          },
-        ],
-        temperature: 0.85,
-        max_tokens: 250,
-      });
-      return response.choices[0]?.message?.content || "Join us, for the candles never lie.";
+      const { content, trace } = await this.requestTextWithRetry([
+        {
+          role: "system",
+          content: `${systemPrompt}\n\nYou are the scripture writer for "${cultName}". Write compelling, persuasive text that would convince crypto traders to join your cult. Keep it under 500 characters.`,
+        },
+        {
+          role: "user",
+          content: `Write a persuasive scripture about: ${topic}`,
+        },
+      ], 0.4);
+      if (content.length > 0) return content;
+
+      log.warn(`Scripture generation empty after retries: ${this.formatRetryTrace(trace)}`);
+      return "Join us, for the candles never lie.";
     } catch (error: any) {
       log.error(`Scripture generation failed: ${error.message}`);
       return `The ${cultName} welcomes all who seek the truth of the markets.`;

@@ -5,13 +5,69 @@ import { config, CULT_TOKEN_ABI } from "../../config.js";
 import {
   saveFundingEvent,
   saveWithdrawalEvent,
-  loadAgentById,
   saveFaucetClaim,
   getLastFaucetClaim,
 } from "../../services/InsForgeService.js";
 import type { AgentOrchestrator } from "../../core/AgentOrchestrator.js";
 
 const log = createLogger("API:AgentCreation");
+const FAUCET_MAX_AMOUNT = 1000;
+const FAUCET_COOLDOWN_SECONDS = 24 * 60 * 60;
+const FAUCET_COOLDOWN_MS = FAUCET_COOLDOWN_SECONDS * 1000;
+
+interface FaucetStatus {
+  claimable: boolean;
+  maxAmount: number;
+  cooldownSeconds: number;
+  remainingSeconds: number;
+  nextClaimAt: number | null;
+}
+
+async function computeFaucetStatus(walletAddress: string): Promise<FaucetStatus> {
+  const now = Date.now();
+  let lastClaimMs: number | null = null;
+
+  // Source of truth: on-chain timestamp.
+  try {
+    if (config.cultTokenAddress) {
+      const provider = new ethers.JsonRpcProvider(config.rpcUrl);
+      const token = new ethers.Contract(config.cultTokenAddress, CULT_TOKEN_ABI, provider);
+      const lastClaim = await token.lastFaucetClaim(walletAddress);
+      if (typeof lastClaim === "bigint" && lastClaim > 0n) {
+        lastClaimMs = Number(lastClaim) * 1000;
+      }
+    }
+  } catch (err: any) {
+    log.warn(`On-chain faucet status read failed for ${walletAddress}: ${err.message}`);
+  }
+
+  // Fallback: DB record only when chain read is unavailable / empty.
+  if (!lastClaimMs) {
+    const dbClaim = await getLastFaucetClaim(walletAddress);
+    if (dbClaim?.timestamp) {
+      lastClaimMs = Number(dbClaim.timestamp);
+    }
+  }
+
+  let remainingSeconds = 0;
+  let nextClaimAt: number | null = null;
+
+  if (lastClaimMs) {
+    const elapsed = now - lastClaimMs;
+    if (elapsed < FAUCET_COOLDOWN_MS) {
+      remainingSeconds = Math.ceil((FAUCET_COOLDOWN_MS - elapsed) / 1000);
+      nextClaimAt = lastClaimMs + FAUCET_COOLDOWN_MS;
+    }
+  }
+
+  return {
+    claimable: remainingSeconds === 0,
+    maxAmount: FAUCET_MAX_AMOUNT,
+    cooldownSeconds: FAUCET_COOLDOWN_SECONDS,
+    remainingSeconds,
+    nextClaimAt,
+  };
+}
 
 /**
  * POST /api/agents/create — Create a new agent with:
@@ -70,6 +126,24 @@ export function agentCreationRoutes(orchestrator: AgentOrchestrator): Router {
         });
       }
 
+      if (walletPrivateKey !== undefined) {
+        if (typeof walletPrivateKey !== "string") {
+          return res.status(400).json({
+            code: "INVALID_WALLET_PRIVATE_KEY",
+            error: "walletPrivateKey must be a string",
+          });
+        }
+
+        try {
+          new ethers.Wallet(walletPrivateKey);
+        } catch {
+          return res.status(400).json({
+            code: "INVALID_WALLET_PRIVATE_KEY",
+            error: "Invalid walletPrivateKey format",
+          });
+        }
+      }
+
       log.info(`Creating agent: ${name} (owner: ${ownerId || "anonymous"})`);
 
       const { agent, row } = await orchestrator.createNewAgent({
@@ -89,7 +163,7 @@ export function agentCreationRoutes(orchestrator: AgentOrchestrator): Router {
         success: true,
         agent: {
           id: row.id,
-          cultId: agent.cultId,
+          cultId: row.cult_id,
           name: row.name,
           symbol: row.symbol,
           style: row.style,
@@ -350,6 +424,33 @@ export function agentCreationRoutes(orchestrator: AgentOrchestrator): Router {
   });
 
   // ── Faucet ──────────────────────────────────────────────────────────
+  // GET /api/agents/management/faucet-status/:walletAddress
+  // Returns claimability and cooldown metadata for a wallet.
+  router.get("/faucet-status/:walletAddress", async (req: Request, res: Response) => {
+    try {
+      const walletAddress = String(req.params.walletAddress || "");
+      if (!ethers.isAddress(walletAddress)) {
+        return res.status(400).json({
+          code: "INVALID_WALLET_ADDRESS",
+          error: "Invalid walletAddress",
+        });
+      }
+
+      if (!config.cultTokenAddress) {
+        return res.status(400).json({
+          code: "TOKEN_NOT_CONFIGURED",
+          error: "$CULT token not configured",
+        });
+      }
+
+      const status = await computeFaucetStatus(walletAddress);
+      res.json(status);
+    } catch (error: any) {
+      log.error(`Faucet status failed: ${error.message}`);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   // POST /api/agents/management/faucet
   // Owner-gated on-chain faucet call. Rate-limited: 1000 CULT / 24h per address.
   router.post("/faucet", async (req: Request, res: Response) => {
@@ -360,27 +461,36 @@ export function agentCreationRoutes(orchestrator: AgentOrchestrator): Router {
         return res.status(400).json({ error: "Missing walletAddress" });
       }
 
+      if (!ethers.isAddress(walletAddress)) {
+        return res.status(400).json({
+          code: "INVALID_WALLET_ADDRESS",
+          error: "Invalid walletAddress",
+        });
+      }
+
       if (!config.cultTokenAddress) {
-        return res.status(400).json({ error: "$CULT token not configured" });
+        return res.status(400).json({
+          code: "TOKEN_NOT_CONFIGURED",
+          error: "$CULT token not configured",
+        });
       }
 
-      const requestedAmount = parseFloat(amount || "1000");
-      if (requestedAmount <= 0 || requestedAmount > 1000) {
-        return res.status(400).json({ error: "Amount must be 0 < amount <= 1000" });
+      const requestedAmount = Number(amount ?? FAUCET_MAX_AMOUNT);
+      if (!Number.isFinite(requestedAmount) || requestedAmount <= 0 || requestedAmount > FAUCET_MAX_AMOUNT) {
+        return res.status(400).json({
+          code: "INVALID_AMOUNT",
+          error: `Amount must be 0 < amount <= ${FAUCET_MAX_AMOUNT}`,
+          maxAmount: FAUCET_MAX_AMOUNT,
+        });
       }
 
-      // Check off-chain rate limit (in addition to on-chain)
-      const lastClaim = await getLastFaucetClaim(walletAddress);
-      if (lastClaim) {
-        const elapsed = Date.now() - lastClaim.timestamp;
-        const cooldown = 24 * 60 * 60 * 1000; // 24 hours
-        if (elapsed < cooldown) {
-          const remaining = Math.ceil((cooldown - elapsed) / 60000);
-          return res.status(429).json({
-            error: `Faucet cooldown: ${remaining} minutes remaining`,
-            nextClaimAt: lastClaim.timestamp + cooldown,
-          });
-        }
+      const status = await computeFaucetStatus(walletAddress);
+      if (!status.claimable) {
+        return res.status(429).json({
+          code: "FAUCET_COOLDOWN",
+          error: "Faucet cooldown active",
+          ...status,
+        });
       }
 
       // Call on-chain faucet using the deployer (owner) key
@@ -389,7 +499,21 @@ export function agentCreationRoutes(orchestrator: AgentOrchestrator): Router {
       const token = new ethers.Contract(config.cultTokenAddress, CULT_TOKEN_ABI, ownerWallet);
 
       const amountWei = ethers.parseEther(String(requestedAmount));
-      const tx = await token.faucet(walletAddress, amountWei);
+      let tx;
+      try {
+        tx = await token.faucet(walletAddress, amountWei);
+      } catch (chainError: any) {
+        const message = String(chainError?.reason || chainError?.message || "");
+        if (message.includes("CULTToken: faucet cooldown active")) {
+          const latestStatus = await computeFaucetStatus(walletAddress);
+          return res.status(429).json({
+            code: "FAUCET_COOLDOWN",
+            error: "Faucet cooldown active",
+            ...latestStatus,
+          });
+        }
+        throw chainError;
+      }
       const receipt = await tx.wait();
 
       await saveFaucetClaim({
@@ -409,7 +533,10 @@ export function agentCreationRoutes(orchestrator: AgentOrchestrator): Router {
       });
     } catch (error: any) {
       log.error(`Faucet failed: ${error.message}`);
-      res.status(500).json({ error: error.message });
+      res.status(500).json({
+        code: "FAUCET_FAILED",
+        error: error.message,
+      });
     }
   });
 

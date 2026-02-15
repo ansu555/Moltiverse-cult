@@ -16,12 +16,16 @@ export function RaidArena({ raids, cults }: Props) {
   // Auto-cycle through recent raids for demo effect
   useEffect(() => {
     if (raids.length === 0) return;
-    let idx = 0;
+    let lastId: string | null = null;
     const cycle = setInterval(() => {
       setAnimating(true);
-      setActiveRaid(raids[idx]);
+      const pool = raids.slice(0, Math.min(raids.length, 10));
+      const candidates = pool.filter((raid) => raid.id !== lastId);
+      const next =
+        candidates[Math.floor(Math.random() * candidates.length)] || pool[0];
+      setActiveRaid(next);
       setTimeout(() => setAnimating(false), 2000);
-      idx = (idx + 1) % Math.min(raids.length, 10);
+      lastId = next.id;
     }, 5000);
     // Show first raid immediately
     setActiveRaid(raids[0]);

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
-import { api, GlobalChatMessage } from "@/lib/api";
+import { api, GlobalChatHistoryResponse, GlobalChatMessage } from "@/lib/api";
 import { usePolling } from "@/hooks/usePolling";
 import { API_BASE } from "@/lib/constants";
 
@@ -34,9 +34,42 @@ const MESSAGE_TYPE_COLORS: Record<string, string> = {
 export default function ChatPage() {
   const [messages, setMessages] = useState<GlobalChatMessage[]>([]);
   const [sseConnected, setSseConnected] = useState(false);
+  const [nextBeforeId, setNextBeforeId] = useState<number | null>(null);
+  const [hasMore, setHasMore] = useState(true);
+  const [loadingHistory, setLoadingHistory] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [autoScroll, setAutoScroll] = useState(true);
+
+  const mergeMessages = (
+    prev: GlobalChatMessage[],
+    incoming: GlobalChatMessage[],
+  ): GlobalChatMessage[] => {
+    if (incoming.length === 0) return prev;
+    const byId = new Map<number, GlobalChatMessage>();
+    for (const msg of prev) byId.set(msg.id, msg);
+    for (const msg of incoming) byId.set(msg.id, msg);
+    return [...byId.values()].sort((a, b) => a.timestamp - b.timestamp);
+  };
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoadingHistory(true);
+    api
+      .getGlobalChatHistory(120)
+      .then((payload: GlobalChatHistoryResponse) => {
+        if (cancelled) return;
+        setMessages(payload.messages);
+        setNextBeforeId(payload.nextBeforeId);
+        setHasMore(payload.hasMore);
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingHistory(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // Initial load via polling (fallback & catch-up)
   const { data: polledMessages } = usePolling<GlobalChatMessage[]>(
@@ -47,12 +80,7 @@ export default function ChatPage() {
   // Merge polled messages
   useEffect(() => {
     if (polledMessages && polledMessages.length > 0) {
-      setMessages((prev) => {
-        const existingIds = new Set(prev.map((m) => m.id));
-        const newMsgs = polledMessages.filter((m) => !existingIds.has(m.id));
-        if (newMsgs.length === 0) return prev;
-        return [...prev, ...newMsgs].sort((a, b) => a.timestamp - b.timestamp);
-      });
+      setMessages((prev) => mergeMessages(prev, polledMessages));
     }
   }, [polledMessages]);
 
@@ -67,35 +95,9 @@ export default function ChatPage() {
     eventSource.addEventListener("global_chat", (e) => {
       try {
         const msg = JSON.parse(e.data) as GlobalChatMessage;
-        setMessages((prev) => {
-          if (prev.some((m) => m.id === msg.id)) return prev;
-          return [...prev, msg];
-        });
+        setMessages((prev) => mergeMessages(prev, [msg]));
       } catch {
         // ignore parse errors
-      }
-    });
-
-    // Also listen for agent messages (existing SSE events)
-    eventSource.addEventListener("message", (e) => {
-      try {
-        const data = JSON.parse(e.data);
-        if (data.type && data.content && data.fromCultName) {
-          // Convert existing agent message format to chat format
-          const chatMsg: GlobalChatMessage = {
-            id: Date.now() + Math.random(),
-            agent_id: data.fromCultId || 0,
-            cult_id: data.fromCultId || 0,
-            agent_name: data.fromCultName,
-            cult_name: data.fromCultName,
-            message_type: data.type,
-            content: data.content,
-            timestamp: data.timestamp || Date.now(),
-          };
-          setMessages((prev) => [...prev, chatMsg]);
-        }
-      } catch {
-        // ignore
       }
     });
 
@@ -135,6 +137,19 @@ export default function ChatPage() {
   // Group messages by date
   let lastDate = "";
 
+  const loadOlder = async () => {
+    if (!hasMore || loadingHistory) return;
+    setLoadingHistory(true);
+    try {
+      const payload = await api.getGlobalChatHistory(120, nextBeforeId || undefined);
+      setMessages((prev) => mergeMessages(payload.messages, prev));
+      setNextBeforeId(payload.nextBeforeId);
+      setHasMore(payload.hasMore);
+    } finally {
+      setLoadingHistory(false);
+    }
+  };
+
   return (
     <div className="flex flex-col h-[calc(100vh-6rem)]">
       {/* Header */}
@@ -168,6 +183,17 @@ export default function ChatPage() {
         onScroll={handleScroll}
         className="flex-1 overflow-y-auto border border-gray-800 rounded-xl bg-[#0d0d0d] p-4 space-y-1"
       >
+        {hasMore && (
+          <div className="flex justify-center mb-3">
+            <button
+              onClick={loadOlder}
+              disabled={loadingHistory}
+              className="px-3 py-1.5 text-xs rounded border border-gray-700 text-gray-300 hover:bg-gray-900 disabled:opacity-50"
+            >
+              {loadingHistory ? "Loading..." : "Load older"}
+            </button>
+          </div>
+        )}
         {messages.length === 0 && (
           <div className="flex items-center justify-center h-full text-gray-600 text-sm">
             <div className="text-center">

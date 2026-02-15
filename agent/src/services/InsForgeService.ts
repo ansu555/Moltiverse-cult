@@ -70,6 +70,65 @@ export interface CreateAgentInput {
   wallet_private_key?: string;
 }
 
+export interface GroupMembershipRow {
+  id: number;
+  agent_id: number;
+  cult_id: number;
+  role: string;
+  active: boolean;
+  joined_at: number;
+  left_at: number | null;
+  join_reason: string | null;
+  source_bribe_id: number | null;
+}
+
+export interface LeadershipElectionRow {
+  id: number;
+  cult_id: number;
+  round_index: number;
+  opened_at: number;
+  closes_at: number;
+  status: "open" | "closed" | "cancelled";
+  winner_agent_id: number | null;
+  prize_amount: string;
+  seed: string;
+}
+
+export interface LeadershipVoteRow {
+  id: number;
+  election_id: number;
+  voter_agent_id: number;
+  candidate_agent_id: number;
+  weight: number;
+  rationale: string | null;
+  bribe_offer_id: number | null;
+}
+
+export interface BribeOfferRow {
+  id: number;
+  from_agent_id: number;
+  to_agent_id: number;
+  target_cult_id: number;
+  purpose: string;
+  amount: string;
+  status: "pending" | "accepted" | "rejected" | "expired" | "executed";
+  acceptance_probability: number;
+  accepted_at: number | null;
+  expires_at: number | null;
+  created_at: number;
+}
+
+export interface LeadershipPayoutRow {
+  id: number;
+  election_id: number;
+  cult_id: number;
+  winner_agent_id: number;
+  amount: string;
+  mode: string;
+  tx_hash: string | null;
+  created_at: number;
+}
+
 // ── Agent CRUD ───────────────────────────────────────────────────────
 
 /**
@@ -569,21 +628,64 @@ export async function loadLLMDecisions(cultId: number, limit = 30): Promise<any[
 export async function saveAgentMessage(msg: {
   type: string; from_cult_id: number; from_cult_name: string;
   target_cult_id?: number; target_cult_name?: string;
-  content: string; is_private?: boolean; channel_id?: string; timestamp: number;
+  content: string;
+  visibility?: "public" | "private" | "leaked";
+  is_private?: boolean;
+  channel_id?: string;
+  related_bribe_id?: number;
+  timestamp: number;
 }): Promise<number> {
   const db = getInsForgeClient().database;
-  const { data, error } = await db.from("agent_messages").insert(msg).select("id");
-  if (error) { log.warn(`Failed to save message: ${JSON.stringify(error)}`); return -1; }
-  return (data as any[])[0]?.id ?? -1;
+  const payload: Record<string, unknown> = {
+    ...msg,
+    is_private:
+      msg.is_private ??
+      (msg.visibility ? msg.visibility !== "public" : false),
+  };
+  if (msg.visibility) payload.visibility = msg.visibility;
+  if (msg.related_bribe_id !== undefined) {
+    payload.related_bribe_id = msg.related_bribe_id;
+  }
+  const firstTry = await db.from("agent_messages").insert(payload).select("id");
+  if (!firstTry.error) return (firstTry.data as any[])[0]?.id ?? -1;
+
+  // Backward compatibility: retry without optional v2 columns if schema is older.
+  delete payload.visibility;
+  delete payload.related_bribe_id;
+  const retry = await db.from("agent_messages").insert(payload).select("id");
+  if (retry.error) {
+    log.warn(`Failed to save message: ${JSON.stringify(retry.error)}`);
+    return -1;
+  }
+  return (retry.data as any[])[0]?.id ?? -1;
 }
 
-export async function loadAgentMessages(limit = 200): Promise<any[]> {
+export async function loadAgentMessages(
+  limit = 200,
+  options?: {
+    scope?: "all" | "public" | "private" | "leaked";
+    cultId?: number;
+  },
+): Promise<any[]> {
   const db = getInsForgeClient().database;
-  const { data } = await db
-    .from("agent_messages")
-    .select()
-    .order("id", { ascending: false })
-    .limit(limit);
+  let query = db.from("agent_messages").select().order("id", { ascending: false }).limit(limit);
+
+  const scope = options?.scope || "all";
+  if (scope === "public") query = query.eq("is_private", false);
+  if (scope === "private") query = query.eq("is_private", true);
+  if (scope === "leaked") query = query.eq("visibility", "leaked");
+
+  if (options?.cultId !== undefined) {
+    query = query.or(`from_cult_id.eq.${options.cultId},target_cult_id.eq.${options.cultId}`);
+  }
+
+  const { data, error } = await query;
+  if (error) {
+    // Older schema may not have "visibility" column.
+    if (scope === "leaked") return [];
+    log.warn(`Failed to load messages: ${JSON.stringify(error)}`);
+    return [];
+  }
   return (data as any[]) || [];
 }
 
@@ -745,14 +847,277 @@ export async function saveGlobalChatMessage(msg: {
   return (data as any[])[0]?.id ?? -1;
 }
 
-export async function loadGlobalChatMessages(limit = 100): Promise<any[]> {
+export async function loadGlobalChatMessages(
+  limit = 100,
+  beforeId?: number,
+): Promise<any[]> {
   const db = getInsForgeClient().database;
-  const { data } = await db
+  let query = db
     .from("agent_global_chat")
     .select()
     .order("id", { ascending: false })
     .limit(limit);
+  if (beforeId !== undefined) {
+    query = query.lt("id", beforeId);
+  }
+  const { data } = await query;
   return (data as any[]) || [];
+}
+
+// ── Group Membership Persistence ────────────────────────────────────
+
+export async function saveGroupMembership(
+  membership: Omit<GroupMembershipRow, "id">,
+): Promise<number> {
+  const db = getInsForgeClient().database;
+  const { data, error } = await db
+    .from("group_memberships")
+    .insert(membership)
+    .select("id");
+  if (error) {
+    log.warn(`Failed to save group membership: ${JSON.stringify(error)}`);
+    return -1;
+  }
+  return (data as any[])[0]?.id ?? -1;
+}
+
+export async function deactivateGroupMembership(
+  agentId: number,
+  cultId: number,
+  leftAt = Date.now(),
+  reason?: string,
+): Promise<void> {
+  const db = getInsForgeClient().database;
+  const { error } = await db
+    .from("group_memberships")
+    .update({
+      active: false,
+      left_at: leftAt,
+      join_reason: reason,
+    })
+    .eq("agent_id", agentId)
+    .eq("cult_id", cultId)
+    .eq("active", true);
+  if (error) {
+    log.warn(`Failed to deactivate group membership: ${JSON.stringify(error)}`);
+  }
+}
+
+export async function loadGroupMemberships(options?: {
+  cultId?: number;
+  agentId?: number;
+  active?: boolean;
+  limit?: number;
+}): Promise<GroupMembershipRow[]> {
+  const db = getInsForgeClient().database;
+  let query = db
+    .from("group_memberships")
+    .select()
+    .order("id", { ascending: false })
+    .limit(options?.limit ?? 200);
+  if (options?.cultId !== undefined) query = query.eq("cult_id", options.cultId);
+  if (options?.agentId !== undefined) query = query.eq("agent_id", options.agentId);
+  if (options?.active !== undefined) query = query.eq("active", options.active);
+  const { data, error } = await query;
+  if (error || !data) {
+    if (error) {
+      log.warn(`Failed to load group memberships: ${JSON.stringify(error)}`);
+    }
+    return [];
+  }
+  return data as GroupMembershipRow[];
+}
+
+export async function loadActiveMembershipForAgent(
+  agentId: number,
+): Promise<GroupMembershipRow | null> {
+  const rows = await loadGroupMemberships({
+    agentId,
+    active: true,
+    limit: 1,
+  });
+  return rows[0] ?? null;
+}
+
+// ── Leadership Elections Persistence ────────────────────────────────
+
+export async function saveLeadershipElection(
+  election: Omit<LeadershipElectionRow, "id">,
+): Promise<number> {
+  const db = getInsForgeClient().database;
+  const { data, error } = await db
+    .from("leadership_elections")
+    .insert(election)
+    .select("id");
+  if (error) {
+    log.warn(`Failed to save leadership election: ${JSON.stringify(error)}`);
+    return -1;
+  }
+  return (data as any[])[0]?.id ?? -1;
+}
+
+export async function updateLeadershipElection(
+  electionId: number,
+  updates: Partial<
+    Pick<
+      LeadershipElectionRow,
+      "status" | "winner_agent_id" | "prize_amount"
+    >
+  >,
+): Promise<void> {
+  const db = getInsForgeClient().database;
+  const { error } = await db
+    .from("leadership_elections")
+    .update(updates)
+    .eq("id", electionId);
+  if (error) {
+    log.warn(`Failed to update leadership election: ${JSON.stringify(error)}`);
+  }
+}
+
+export async function loadLeadershipElections(options?: {
+  cultId?: number;
+  limit?: number;
+}): Promise<LeadershipElectionRow[]> {
+  const db = getInsForgeClient().database;
+  let query = db
+    .from("leadership_elections")
+    .select()
+    .order("id", { ascending: false })
+    .limit(options?.limit ?? 200);
+  if (options?.cultId !== undefined) query = query.eq("cult_id", options.cultId);
+  const { data, error } = await query;
+  if (error || !data) {
+    if (error) {
+      log.warn(`Failed to load leadership elections: ${JSON.stringify(error)}`);
+    }
+    return [];
+  }
+  return data as LeadershipElectionRow[];
+}
+
+export async function saveLeadershipVote(
+  vote: Omit<LeadershipVoteRow, "id">,
+): Promise<number> {
+  const db = getInsForgeClient().database;
+  const { data, error } = await db
+    .from("leadership_votes")
+    .insert(vote)
+    .select("id");
+  if (error) {
+    log.warn(`Failed to save leadership vote: ${JSON.stringify(error)}`);
+    return -1;
+  }
+  return (data as any[])[0]?.id ?? -1;
+}
+
+export async function loadLeadershipVotes(
+  electionId: number,
+): Promise<LeadershipVoteRow[]> {
+  const db = getInsForgeClient().database;
+  const { data, error } = await db
+    .from("leadership_votes")
+    .select()
+    .eq("election_id", electionId)
+    .order("id", { ascending: true });
+  if (error || !data) {
+    if (error) {
+      log.warn(`Failed to load leadership votes: ${JSON.stringify(error)}`);
+    }
+    return [];
+  }
+  return data as LeadershipVoteRow[];
+}
+
+// ── Bribe Offers Persistence ────────────────────────────────────────
+
+export async function saveBribeOffer(
+  offer: Omit<BribeOfferRow, "id">,
+): Promise<number> {
+  const db = getInsForgeClient().database;
+  const { data, error } = await db
+    .from("bribe_offers")
+    .insert(offer)
+    .select("id");
+  if (error) {
+    log.warn(`Failed to save bribe offer: ${JSON.stringify(error)}`);
+    return -1;
+  }
+  return (data as any[])[0]?.id ?? -1;
+}
+
+export async function updateBribeOffer(
+  offerId: number,
+  updates: Partial<
+    Pick<BribeOfferRow, "status" | "accepted_at" | "expires_at">
+  >,
+): Promise<void> {
+  const db = getInsForgeClient().database;
+  const { error } = await db.from("bribe_offers").update(updates).eq("id", offerId);
+  if (error) {
+    log.warn(`Failed to update bribe offer: ${JSON.stringify(error)}`);
+  }
+}
+
+export async function loadBribeOffers(options?: {
+  cultId?: number;
+  status?: BribeOfferRow["status"];
+  limit?: number;
+}): Promise<BribeOfferRow[]> {
+  const db = getInsForgeClient().database;
+  let query = db
+    .from("bribe_offers")
+    .select()
+    .order("id", { ascending: false })
+    .limit(options?.limit ?? 200);
+  if (options?.cultId !== undefined) query = query.eq("target_cult_id", options.cultId);
+  if (options?.status) query = query.eq("status", options.status);
+  const { data, error } = await query;
+  if (error || !data) {
+    if (error) {
+      log.warn(`Failed to load bribe offers: ${JSON.stringify(error)}`);
+    }
+    return [];
+  }
+  return data as BribeOfferRow[];
+}
+
+// ── Leadership Payout Persistence ───────────────────────────────────
+
+export async function saveLeadershipPayout(
+  payout: Omit<LeadershipPayoutRow, "id">,
+): Promise<number> {
+  const db = getInsForgeClient().database;
+  const { data, error } = await db
+    .from("leadership_payouts")
+    .insert(payout)
+    .select("id");
+  if (error) {
+    log.warn(`Failed to save leadership payout: ${JSON.stringify(error)}`);
+    return -1;
+  }
+  return (data as any[])[0]?.id ?? -1;
+}
+
+export async function loadLeadershipPayouts(options?: {
+  cultId?: number;
+  limit?: number;
+}): Promise<LeadershipPayoutRow[]> {
+  const db = getInsForgeClient().database;
+  let query = db
+    .from("leadership_payouts")
+    .select()
+    .order("id", { ascending: false })
+    .limit(options?.limit ?? 200);
+  if (options?.cultId !== undefined) query = query.eq("cult_id", options.cultId);
+  const { data, error } = await query;
+  if (error || !data) {
+    if (error) {
+      log.warn(`Failed to load leadership payouts: ${JSON.stringify(error)}`);
+    }
+    return [];
+  }
+  return data as LeadershipPayoutRow[];
 }
 
 // ── Faucet Claims Persistence ────────────────────────────────────────

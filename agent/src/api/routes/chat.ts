@@ -18,14 +18,50 @@ const log = createLogger("API:Chat");
 export function chatRoutes(orchestrator: AgentOrchestrator): Router {
   const router = Router();
 
+  const parseLimit = (raw: unknown, fallback: number) => {
+    const n = Number.parseInt(String(raw ?? fallback), 10);
+    if (!Number.isFinite(n) || n <= 0) return fallback;
+    return Math.min(n, 500);
+  };
+
+  const parseBeforeId = (raw: unknown): number | undefined => {
+    if (raw === undefined || raw === null || raw === "") return undefined;
+    const n = Number.parseInt(String(raw), 10);
+    return Number.isFinite(n) && n > 0 ? n : undefined;
+  };
+
   // GET /api/chat — fetch recent messages (paginated)
   router.get("/", async (req: Request, res: Response) => {
     try {
-      const limit = Math.min(parseInt(String(req.query.limit || "100")), 500);
-      const messages = await loadGlobalChatMessages(limit);
+      const limit = parseLimit(req.query.limit, 100);
+      const beforeId = parseBeforeId(req.query.beforeId);
+      const messages = await loadGlobalChatMessages(limit, beforeId);
 
       // Return in chronological order (oldest first) for display
       res.json(messages.reverse());
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // GET /api/chat/history — cursor pagination payload
+  router.get("/history", async (req: Request, res: Response) => {
+    try {
+      const limit = parseLimit(req.query.limit, 100);
+      const beforeId = parseBeforeId(req.query.beforeId);
+      const rows = await loadGlobalChatMessages(limit + 1, beforeId);
+      const hasMore = rows.length > limit;
+      const pageRows = hasMore ? rows.slice(0, limit) : rows;
+      const nextBeforeId =
+        hasMore && pageRows.length > 0
+          ? (pageRows[pageRows.length - 1] as any).id
+          : null;
+
+      res.json({
+        messages: [...pageRows].reverse(),
+        nextBeforeId,
+        hasMore,
+      });
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }

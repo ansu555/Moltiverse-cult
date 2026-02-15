@@ -151,6 +151,150 @@ function getLLM() {
   return new OpenAI({ apiKey: LLM_API_KEY, baseURL: LLM_BASE_URL });
 }
 
+// ── LLM Retry Helpers ────────────────────────────────────────────────
+const LLM_RETRY_MAX_TOKENS = [500, 900, 1400] as const;
+
+interface LLMAttemptTrace {
+  attempt: number;
+  maxTokens: number;
+  finishReason: string;
+  contentLength: number;
+  hasJson?: boolean;
+  error?: string;
+}
+
+interface LLMRequestArgs {
+  model: string;
+  messages: Array<{ role: "system" | "user" | "assistant"; content: string }>;
+  temperature?: number;
+}
+
+function isLLMAccountIssue(message: string): boolean {
+  return message.includes("402")
+    || message.includes("Insufficient credits")
+    || message.includes("No allowed providers")
+    || message.includes("authenticate")
+    || message.includes("401")
+    || message.includes("502");
+}
+
+function extractAssistantText(response: any): string {
+  const content = response?.choices?.[0]?.message?.content;
+  return typeof content === "string" ? content.trim() : "";
+}
+
+function formatLLMTrace(trace: LLMAttemptTrace[]): string {
+  if (trace.length === 0) return "no attempts";
+  return trace
+    .map((t) => {
+      const jsonPart = t.hasJson === undefined ? "" : `,json=${t.hasJson}`;
+      const errPart = t.error ? `,err=${t.error.slice(0, 60)}` : "";
+      return `#${t.attempt}[tok=${t.maxTokens},finish=${t.finishReason},len=${t.contentLength}${jsonPart}${errPart}]`;
+    })
+    .join(" | ");
+}
+
+async function requestTextWithRetry(
+  llm: OpenAI,
+  request: LLMRequestArgs,
+): Promise<{ text: string; trace: LLMAttemptTrace[] }> {
+  const trace: LLMAttemptTrace[] = [];
+
+  for (let i = 0; i < LLM_RETRY_MAX_TOKENS.length; i++) {
+    const maxTokens = LLM_RETRY_MAX_TOKENS[i];
+    try {
+      const response = await llm.chat.completions.create({
+        ...request,
+        max_tokens: maxTokens,
+      });
+      const text = extractAssistantText(response);
+      trace.push({
+        attempt: i + 1,
+        maxTokens,
+        finishReason: String(response?.choices?.[0]?.finish_reason ?? "unknown"),
+        contentLength: text.length,
+      });
+      if (text.length > 0) return { text, trace };
+    } catch (err: any) {
+      const message = String(err?.message || err);
+      if (isLLMAccountIssue(message)) throw err;
+      trace.push({
+        attempt: i + 1,
+        maxTokens,
+        finishReason: "error",
+        contentLength: 0,
+        error: message,
+      });
+    }
+  }
+
+  return { text: "", trace };
+}
+
+async function requestJsonWithRetry(
+  llm: OpenAI,
+  request: LLMRequestArgs,
+): Promise<{ text: string; json: any | null; trace: LLMAttemptTrace[] }> {
+  const trace: LLMAttemptTrace[] = [];
+
+  for (let i = 0; i < LLM_RETRY_MAX_TOKENS.length; i++) {
+    const maxTokens = LLM_RETRY_MAX_TOKENS[i];
+    try {
+      const response = await llm.chat.completions.create({
+        ...request,
+        max_tokens: maxTokens,
+      });
+      const text = extractAssistantText(response);
+      const finishReason = String(response?.choices?.[0]?.finish_reason ?? "unknown");
+      const jsonMatch = text.match(/\{[\s\S]*\}/);
+
+      if (jsonMatch) {
+        try {
+          const parsed = JSON.parse(jsonMatch[0]);
+          trace.push({
+            attempt: i + 1,
+            maxTokens,
+            finishReason,
+            contentLength: text.length,
+            hasJson: true,
+          });
+          return { text, json: parsed, trace };
+        } catch {
+          trace.push({
+            attempt: i + 1,
+            maxTokens,
+            finishReason,
+            contentLength: text.length,
+            hasJson: false,
+          });
+          continue;
+        }
+      }
+
+      trace.push({
+        attempt: i + 1,
+        maxTokens,
+        finishReason,
+        contentLength: text.length,
+        hasJson: false,
+      });
+    } catch (err: any) {
+      const message = String(err?.message || err);
+      if (isLLMAccountIssue(message)) throw err;
+      trace.push({
+        attempt: i + 1,
+        maxTokens,
+        finishReason: "error",
+        contentLength: 0,
+        hasJson: false,
+        error: message,
+      });
+    }
+  }
+
+  return { text: "", json: null, trace };
+}
+
 // ──────────────────────────────────────────────────────────────────────
 // ██████  SUITE 1: Foundation — Chain & DB Connectivity  ██████
 // ──────────────────────────────────────────────────────────────────────
@@ -234,17 +378,16 @@ async function suite1_Foundation() {
   subsection("1.6 LLM Connectivity");
   try {
     const llm = getLLM();
-    const response = await llm.chat.completions.create({
+    const { text, trace } = await requestTextWithRetry(llm, {
       model: LLM_MODEL,
       messages: [{ role: "user", content: "Say 'test ok' and nothing else." }],
-      max_tokens: 10,
+      temperature: 0.2,
     });
-    const content = response.choices[0]?.message?.content || "";
-    assert("LLM returns non-empty response", content.length > 0, "non-empty string", `"${content}"`);
-    pass("LLM API reachable", `model: ${LLM_MODEL}`);
-    LLM_AVAILABLE = true;
+    assert("LLM returns non-empty response", text.length > 0, "non-empty string", formatLLMTrace(trace));
+    LLM_AVAILABLE = text.length > 0;
+    if (LLM_AVAILABLE) pass("LLM API reachable", `model: ${LLM_MODEL}`);
   } catch (err: any) {
-    if (err.message?.includes("402") || err.message?.includes("Insufficient credits") || err.message?.includes("No allowed providers") || err.message?.includes("authenticate") || err.message?.includes("401") || err.message?.includes("502")) {
+    if (isLLMAccountIssue(String(err?.message || err))) {
       skip("LLM connectivity", `Account/auth issue: ${err.message.slice(0, 80)}. Set AGENT_API_KEY with valid credentials.`);
     } else {
       fail("LLM connectivity", "reachable", err.message);
@@ -534,7 +677,7 @@ async function suite4_LLMDecision() {
   // 4.1 Decision action parsing
   subsection("4.1 Action Decision — JSON Parsing");
   try {
-    const response = await llm.chat.completions.create({
+    const { text, json, trace } = await requestJsonWithRetry(llm, {
       model: LLM_MODEL,
       messages: [
         {
@@ -546,18 +689,14 @@ async function suite4_LLMDecision() {
           content: `Treasury: 0.015 MON, Followers: 2, Raid victories: 1. Rivals: [ID:0] TestRival: 0.01 MON, 1 followers. Choose action.`,
         },
       ],
-      temperature: 0.7,
-      max_tokens: 300,
+      temperature: 0.2,
     });
 
-    const content = response.choices[0]?.message?.content || "";
-    assert("LLM returns non-empty content", content.length > 0, "non-empty", `"${content.slice(0, 50)}..."`);
+    assert("LLM returns non-empty content", text.length > 0, "non-empty", formatLLMTrace(trace));
+    assert("LLM output contains JSON", !!json, "contains JSON", formatLLMTrace(trace));
 
-    const jsonMatch = content.match(/\{[\s\S]*\}/);
-    assert("LLM output contains JSON", !!jsonMatch, "contains JSON", content.slice(0, 80));
-
-    if (jsonMatch) {
-      const decision = JSON.parse(jsonMatch[0]);
+    if (json) {
+      const decision = json;
       assertDefined("decision.action exists", decision.action);
       assertDefined("decision.reason exists", decision.reason);
       assertIncludes("decision.action is valid", VALID_ACTIONS, decision.action);
@@ -572,17 +711,15 @@ async function suite4_LLMDecision() {
   // 4.2 Prophecy Generation
   subsection("4.2 Prophecy Text Generation");
   try {
-    const response = await llm.chat.completions.create({
+    const { text: prophecy, trace } = await requestTextWithRetry(llm, {
       model: LLM_MODEL,
       messages: [
         { role: "system", content: `You are the divine prophet of "TestCult". Deliver prophecies about crypto markets. Keep under 280 chars.` },
         { role: "user", content: `Market: ETH $3500 (+2.1%). Deliver a prophecy.` },
       ],
-      temperature: 0.9,
-      max_tokens: 200,
+      temperature: 0.4,
     });
-    const prophecy = response.choices[0]?.message?.content || "";
-    assert("Prophecy is non-empty", prophecy.length > 0, ">0 chars", String(prophecy.length));
+    assert("Prophecy is non-empty", prophecy.length > 0, ">0 chars", formatLLMTrace(trace));
     assert("Prophecy is under 500 chars", prophecy.length < 500, "<500", String(prophecy.length));
     pass("Prophecy generated", `"${prophecy.slice(0, 60)}..."`);
   } catch (err: any) {
@@ -592,17 +729,15 @@ async function suite4_LLMDecision() {
   // 4.3 Scripture / Recruitment Text
   subsection("4.3 Scripture (Recruitment) Generation");
   try {
-    const response = await llm.chat.completions.create({
+    const { text: scripture, trace } = await requestTextWithRetry(llm, {
       model: LLM_MODEL,
       messages: [
         { role: "system", content: `You are the scripture writer for "TestCult". Write compelling text under 500 chars.` },
         { role: "user", content: `Write recruitment scripture about why traders should join.` },
       ],
-      temperature: 0.85,
-      max_tokens: 250,
+      temperature: 0.4,
     });
-    const scripture = response.choices[0]?.message?.content || "";
-    assert("Scripture is non-empty", scripture.length > 0, ">0 chars", String(scripture.length));
+    assert("Scripture is non-empty", scripture.length > 0, ">0 chars", formatLLMTrace(trace));
     pass("Scripture generated", `"${scripture.slice(0, 60)}..."`);
   } catch (err: any) {
     fail("Scripture generation", "non-empty", err.message);
@@ -611,17 +746,15 @@ async function suite4_LLMDecision() {
   // 4.4 Meme Caption
   subsection("4.4 Meme Caption Generation");
   try {
-    const response = await llm.chat.completions.create({
+    const { text: caption, trace } = await requestTextWithRetry(llm, {
       model: LLM_MODEL,
       messages: [
         { role: "system", content: `You are TestCult. Generate a savage meme caption for RivalCult. Under 140 chars.` },
         { role: "user", content: `Context: TestCult has 5 followers, RivalCult has 2. Generate caption.` },
       ],
-      temperature: 0.95,
-      max_tokens: 100,
+      temperature: 0.4,
     });
-    const caption = response.choices[0]?.message?.content?.trim() || "";
-    assert("Meme caption is non-empty", caption.length > 0, ">0 chars", String(caption.length));
+    assert("Meme caption is non-empty", caption.length > 0, ">0 chars", formatLLMTrace(trace));
     pass("Meme caption generated", `"${caption.slice(0, 60)}..."`);
   } catch (err: any) {
     fail("Meme caption generation", "non-empty", err.message);
@@ -630,26 +763,22 @@ async function suite4_LLMDecision() {
   // 4.5 Governance Budget Proposal
   subsection("4.5 Governance Budget Proposal via LLM");
   try {
-    const response = await llm.chat.completions.create({
+    const { json: budget, trace } = await requestJsonWithRetry(llm, {
       model: LLM_MODEL,
       messages: [
         { role: "system", content: `You are a cult leader. Respond with ONLY JSON: {"raid": N, "growth": N, "defense": N, "reserve": N, "description": "string"} where values sum to 100.` },
         { role: "user", content: `Treasury: 0.015 MON, Followers: 2, Raid record: 1W/0L. Propose budget allocation.` },
       ],
-      temperature: 0.7,
-      max_tokens: 200,
+      temperature: 0.2,
     });
-    const content = response.choices[0]?.message?.content || "";
-    const jsonMatch = content.match(/\{[\s\S]*\}/);
-    if (jsonMatch) {
-      const budget = JSON.parse(jsonMatch[0]);
+    if (budget) {
       const total = (budget.raid || 0) + (budget.growth || 0) + (budget.defense || 0) + (budget.reserve || 0);
       assert("Budget sums to 100", total === 100, "100", String(total));
       assertInRange("Raid percent in 0-100", budget.raid, 0, 100);
       assertInRange("Growth percent in 0-100", budget.growth, 0, 100);
       pass("LLM budget proposal valid", `R${budget.raid}/G${budget.growth}/D${budget.defense}/Re${budget.reserve}`);
     } else {
-      fail("Budget JSON parsing", "valid JSON", content.slice(0, 80));
+      fail("Budget JSON parsing", "valid JSON", formatLLMTrace(trace));
     }
   } catch (err: any) {
     fail("Budget proposal", "valid budget", err.message);
@@ -1251,25 +1380,21 @@ async function suite8_AgentDeployment() {
   } else {
     try {
       const llm = new OpenAI({ apiKey: LLM_API_KEY, baseURL: LLM_BASE_URL });
-      const response = await llm.chat.completions.create({
+      const { json: decision, trace } = await requestJsonWithRetry(llm, {
         model: LLM_MODEL,
         messages: [
           { role: "system", content: `You are a fierce warrior cult leader. Always choose the most aggressive option. Respond ONLY with valid JSON: {"action": "raid"|"prophecy"|"recruit", "reason": "string", "target": 0}` },
           { role: "user", content: `Treasury: 0.01 MON. Followers: 1. Rival cult [ID:0] has 0.015 MON. Choose action.` },
         ],
-        temperature: 0.7,
-        max_tokens: 200,
+        temperature: 0.2,
       });
 
-      const content = response.choices[0]?.message?.content || "";
-      const jsonMatch = content.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        const decision = JSON.parse(jsonMatch[0]);
+      if (decision) {
         assertDefined("Deployed agent decision.action", decision.action);
         assertDefined("Deployed agent decision.reason", decision.reason);
         pass("Deployed agent can make decisions via custom LLM", `action=${decision.action}`);
       } else {
-        fail("Deployed agent decision", "valid JSON", content.slice(0, 80));
+        fail("Deployed agent decision", "valid JSON", formatLLMTrace(trace));
       }
     } catch (err: any) {
       fail("Deployed agent LLM decision", "success", err.message);

@@ -2,6 +2,7 @@ import { LLMService, AgentDecision } from "./LLMService.js";
 import { CultData } from "../chain/ContractService.js";
 import { createLogger } from "../utils/logger.js";
 import { saveRaid, saveSpoilsVote, updateSpoilsVote } from "./InsForgeService.js";
+import { RandomnessService } from "./RandomnessService.js";
 
 const log = createLogger("RaidService");
 
@@ -35,12 +36,17 @@ export interface SpoilsVote {
 }
 
 export class RaidService {
+  private readonly randomness: RandomnessService;
   private raids: RaidEvent[] = [];
   private spoilsVotes: SpoilsVote[] = [];
   private nextId = 0;
   private nextSpoilsVoteId = 0;
   private cooldowns: Map<string, number> = new Map(); // "attackerId-defenderId" -> timestamp
   private cooldownDuration = 120000; // 2 minutes between same-pair raids
+
+  constructor(randomness?: RandomnessService) {
+    this.randomness = randomness || new RandomnessService();
+  }
 
   shouldRaid(
     ownCult: CultData,
@@ -83,16 +89,35 @@ export class RaidService {
   ): RaidEvent {
     // Design doc power formula: Power = (Treasury × 0.6) + (Members × 100 × 0.4)
     // Plus ±20% randomness variance to keep raids exciting
+    const cycleKey = this.nextId;
+    const attackerVariance =
+      0.8 +
+      this.randomness.float({
+        domain: "raid_attacker_variance",
+        cycle: cycleKey,
+        cultId: attacker.id,
+        agentId: defender.id,
+      }) *
+        0.4;
     const attackerPower =
       Number(attacker.treasuryBalance) * 0.6 +
       attacker.followerCount * 100 * 0.4;
-    const attackerScore = attackerPower * (0.8 + Math.random() * 0.4);
+    const attackerScore = attackerPower * attackerVariance;
 
     const defenderPower =
       Number(defender.treasuryBalance) * 0.6 +
       defender.followerCount * 100 * 0.4;
     // Defender gets slight home advantage (+5%)
-    const defenderScore = defenderPower * (0.85 + Math.random() * 0.4);
+    const defenderVariance =
+      0.85 +
+      this.randomness.float({
+        domain: "raid_defender_variance",
+        cycle: cycleKey,
+        cultId: defender.id,
+        agentId: attacker.id,
+      }) *
+        0.4;
+    const defenderScore = defenderPower * defenderVariance;
 
     const attackerWon = attackerScore > defenderScore;
 
@@ -230,6 +255,7 @@ export class RaidService {
     reason: string,
   ): RaidEvent {
     // Combined attacker power (both allies)
+    const cycleKey = this.nextId;
     const atk1Power =
       Number(attacker.treasuryBalance) * 0.6 +
       attacker.followerCount * 100 * 0.4;
@@ -237,12 +263,32 @@ export class RaidService {
       Number(ally.treasuryBalance) * 0.6 +
       ally.followerCount * 100 * 0.4;
     const combinedPower = atk1Power + atk2Power;
-    const attackerScore = combinedPower * (0.8 + Math.random() * 0.4);
+    const attackerVariance =
+      0.8 +
+      this.randomness.float({
+        domain: "joint_raid_attacker_variance",
+        cycle: cycleKey,
+        cultId: attacker.id,
+        agentId: defender.id,
+        extra: String(ally.id),
+      }) *
+        0.4;
+    const attackerScore = combinedPower * attackerVariance;
 
     const defenderPower =
       Number(defender.treasuryBalance) * 0.6 +
       defender.followerCount * 100 * 0.4;
-    const defenderScore = defenderPower * (0.85 + Math.random() * 0.4);
+    const defenderVariance =
+      0.85 +
+      this.randomness.float({
+        domain: "joint_raid_defender_variance",
+        cycle: cycleKey,
+        cultId: defender.id,
+        agentId: attacker.id,
+        extra: String(ally.id),
+      }) *
+        0.4;
+    const defenderScore = defenderPower * defenderVariance;
 
     const attackerWon = attackerScore > defenderScore;
 

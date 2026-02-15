@@ -98,19 +98,22 @@ function syncStateFromOrchestrator(orchestrator: AgentOrchestrator) {
     .catch(() => { });
 
   // Sync prophecies from ProphecyService
-  const allProphecies = orchestrator.prophecyService.getAllProphecies();
-  stateStore.prophecies = allProphecies.map((p) => ({
-    id: p.id.toString(),
-    cultId: p.cultId,
-    cultName: p.cultName,
-    text: p.prediction,
-    prediction: p.prediction,
-    confidence: p.confidence,
-    resolved: p.resolved,
-    correct: p.resolved ? p.correct : null,
-    createdAt: p.createdAt,
-    resolvedAt: p.resolved ? p.createdAt + 3600000 : null,
-  }));
+  // PROPHECY_DISABLED_START
+  // const allProphecies = orchestrator.prophecyService.getAllProphecies();
+  // stateStore.prophecies = allProphecies.map((p) => ({
+  //   id: p.id.toString(),
+  //   cultId: p.cultId,
+  //   cultName: p.cultName,
+  //   text: p.prediction,
+  //   prediction: p.prediction,
+  //   confidence: p.confidence,
+  //   resolved: p.resolved,
+  //   correct: p.resolved ? p.correct : null,
+  //   createdAt: p.createdAt,
+  //   resolvedAt: p.resolved ? p.createdAt + 3600000 : null,
+  // }));
+  stateStore.prophecies = [];
+  // PROPHECY_DISABLED_END
 
   // Sync raids from RaidService
   const allRaids = orchestrator.raidService.getAllRaids();
@@ -141,6 +144,13 @@ function syncStateFromOrchestrator(orchestrator: AgentOrchestrator) {
   // Sync communication and evolution data
   stateStore.messages = orchestrator.communicationService.getAllMessages();
   stateStore.evolutionTraits = orchestrator.evolutionService.getAllTraits();
+  stateStore.groupMemberships = orchestrator.groupGovernanceService.getAllMemberships();
+  stateStore.leadershipElections = orchestrator.groupGovernanceService.getElections();
+  stateStore.bribeOffers = orchestrator.groupGovernanceService.getBribeOffers({ limit: 500 });
+  stateStore.leadershipStates = stateStore.cults.reduce((acc: Record<number, any>, cult) => {
+    acc[cult.id] = orchestrator.groupGovernanceService.getCurrentLeadership(cult.id);
+    return acc;
+  }, {});
 }
 
 main().catch((err) => {

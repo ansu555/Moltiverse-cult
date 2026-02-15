@@ -1,6 +1,7 @@
 import { LLMService } from "./LLMService.js";
 import { ContractService } from "../chain/ContractService.js";
 import { createLogger } from "../utils/logger.js";
+import { RandomnessService } from "./RandomnessService.js";
 
 const log = createLogger("PersuasionService");
 
@@ -19,12 +20,18 @@ export interface PersuasionEvent {
 export class PersuasionService {
   private llm: LLMService;
   private contractService: ContractService;
+  private randomness: RandomnessService;
   private events: PersuasionEvent[] = [];
   private nextId = 0;
 
-  constructor(llm: LLMService, contractService: ContractService) {
+  constructor(
+    llm: LLMService,
+    contractService: ContractService,
+    randomness?: RandomnessService,
+  ) {
     this.llm = llm;
     this.contractService = contractService;
+    this.randomness = randomness || new RandomnessService();
   }
 
   async attemptConversion(
@@ -53,7 +60,15 @@ export class PersuasionService {
     const cultPower = Math.min(1.0, (cultTreasury * 0.6 + cultMembers * 100 * 0.4) / 10000);
 
     // charismaFactor: small random variance ±20%
-    const charismaFactor = 0.8 + Math.random() * 0.4;
+    const charismaFactor =
+      0.8 +
+      this.randomness.float({
+        domain: "persuasion_charisma",
+        cycle: this.nextId,
+        cultId,
+        agentId: targetCultId,
+      }) *
+        0.4;
 
     // resistance: larger cults are harder to poach from
     const resistance = Math.max(1.0, targetMembers / 5);

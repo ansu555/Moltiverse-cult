@@ -31,6 +31,10 @@ export interface StateStore {
   memory: Record<number, any>;
   messages: any[];
   evolutionTraits: Record<number, any>;
+  groupMemberships: any[];
+  leadershipStates: Record<number, any>;
+  leadershipElections: any[];
+  bribeOffers: any[];
   sseClients: express.Response[];
 }
 
@@ -100,6 +104,10 @@ export const stateStore: StateStore = {
   memory: {},
   messages: [],
   evolutionTraits: {},
+  groupMemberships: [],
+  leadershipStates: {},
+  leadershipElections: [],
+  bribeOffers: [],
   sseClients: [],
 };
 
@@ -133,7 +141,9 @@ export function startApiServer(port: number, orchestrator?: AgentOrchestrator) {
 
   // Mount routes
   app.use("/api/cults", cultRoutes);
+  // PROPHECY_DISABLED_START
   app.use("/api/prophecies", prophecyRoutes);
+  // PROPHECY_DISABLED_END
   app.use("/api/raids", raidRoutes);
   app.use("/api/governance", governanceRoutes);
   app.use("/api/alliances", allianceRoutes(stateStore));

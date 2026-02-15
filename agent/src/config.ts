@@ -1,11 +1,15 @@
 import dotenv from "dotenv";
 import path from "path";
 import { fileURLToPath } from "url";
+import { randomBytes } from "crypto";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, "../..");
 
 dotenv.config({ path: path.join(ROOT, ".env") });
+
+const bootSimulationSeed =
+  process.env.SIMULATION_SEED || randomBytes(16).toString("hex");
 
 const DEFAULT_INSFORGE_ANON_KEY =
   "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3OC0xMjM0LTU2NzgtOTBhYi1jZGVmMTIzNDU2NzgiLCJlbWFpbCI6ImFub25AaW5zZm9yZ2UuY29tIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzEwMjgwMjl9.G0rTXpmGTYLev5WFPfECXwVWx4-SzfASM-HfnmW-Kdc";
@@ -33,6 +37,8 @@ export const config = {
   // Agent
   agentLoopInterval: 30000, // 30 seconds
   agentLoopJitter: 30000, // +0-30s random jitter
+  simulationSeed: bootSimulationSeed,
+  simulationSeedSource: process.env.SIMULATION_SEED ? "env" : "boot-generated",
 
   // API Server
   apiPort: parseInt(process.env.AGENT_API_PORT || "3001"),

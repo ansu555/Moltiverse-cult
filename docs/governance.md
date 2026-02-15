@@ -1,10 +1,37 @@
 # Governance & Political Engine
 
-**Version:** 2.0
-**Status:** Implemented
+**Version:** 3.0
+**Status:** Implemented (Cult-First Refactor)
 **Related Files:** `contracts/GovernanceEngine.sol`, `agent/src/services/GovernanceService.ts`
 
 ---
+
+## 0. Cult-First Runtime Model (v3)
+
+- `Cult = Group` remains the compatibility model.
+- New agents start ungrouped (`agents.cult_id = null`) and can later create/join/switch groups.
+- Leadership now runs as seeded-random elections:
+  - Election interval: `randInt(8, 20)` cycles per cult.
+  - Election duration: `3` cycles.
+  - One vote per active member.
+  - Tie-breaks use deterministic seeded randomness.
+- Winner payout mode is `simulated_offchain` and recorded in `leadership_payouts`.
+- Bribes are represented by `bribe_offers`; accepted offers increase later switch probability instead of forcing immediate switches.
+
+### 0.1 New Persistence Tables
+
+- `group_memberships`
+- `leadership_elections`
+- `leadership_votes`
+- `bribe_offers`
+- `leadership_payouts`
+
+### 0.2 New API Surfaces
+
+- `GET /api/cults/:id/members`
+- `GET /api/cults/:id/leadership/current`
+- `GET /api/cults/:id/leadership/elections`
+- `GET /api/social/bribes`
 
 ## 1. Democratic Budgeting (Strategy)
 

@@ -1,9 +1,30 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  api,
+  FaucetStatus,
+  getApiErrorMessage,
+  isApiError,
+} from "@/lib/api";
+import { CULT_TOKEN_ADDRESS, MONAD_EXPLORER } from "@/lib/constants";
 import { useWallet } from "@/hooks/useWallet";
-import { api } from "@/lib/api";
-import { MONAD_EXPLORER, CULT_TOKEN_ADDRESS } from "@/lib/constants";
+
+function formatDuration(totalSeconds: number): string {
+  const seconds = Math.max(0, totalSeconds);
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const secs = seconds % 60;
+
+  if (hours > 0) return `${hours}h ${minutes}m ${secs}s`;
+  if (minutes > 0) return `${minutes}m ${secs}s`;
+  return `${secs}s`;
+}
+
+function formatNextClaim(nextClaimAt: number | null): string {
+  if (!nextClaimAt) return "-";
+  return new Date(nextClaimAt).toLocaleString();
+}
 
 export default function FaucetPage() {
   const { address, connected, connect } = useWallet();
@@ -12,10 +33,57 @@ export default function FaucetPage() {
   const [txHash, setTxHash] = useState("");
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
+  const [statusLoading, setStatusLoading] = useState(false);
+  const [faucetStatus, setFaucetStatus] = useState<FaucetStatus | null>(null);
+  const [now, setNow] = useState(Date.now());
+
+  const refreshFaucetStatus = useCallback(async () => {
+    if (!connected || !address) {
+      setFaucetStatus(null);
+      return;
+    }
+
+    setStatusLoading(true);
+    try {
+      const status = await api.getFaucetStatus(address);
+      setFaucetStatus(status);
+    } catch (statusError) {
+      if (isApiError(statusError) && statusError.code === "TOKEN_NOT_CONFIGURED") {
+        setError("$CULT token not configured");
+      }
+      setFaucetStatus(null);
+    } finally {
+      setStatusLoading(false);
+    }
+  }, [address, connected]);
+
+  useEffect(() => {
+    refreshFaucetStatus().catch(() => {});
+  }, [refreshFaucetStatus]);
+
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const remainingSeconds = useMemo(() => {
+    if (!faucetStatus || faucetStatus.claimable) return 0;
+    if (faucetStatus.nextClaimAt) {
+      return Math.max(0, Math.ceil((faucetStatus.nextClaimAt - now) / 1000));
+    }
+    return Math.max(0, faucetStatus.remainingSeconds);
+  }, [faucetStatus, now]);
+
+  const claimable = !faucetStatus || remainingSeconds === 0;
 
   const handleClaim = async () => {
     if (!connected || !address) {
       connect();
+      return;
+    }
+
+    if (!claimable) {
+      setError(`Faucet cooldown active. Try again in ${formatDuration(remainingSeconds)}.`);
       return;
     }
 
@@ -27,13 +95,17 @@ export default function FaucetPage() {
     try {
       const result = await api.claimFaucet({
         walletAddress: address,
-        amount: parseInt(amount),
+        amount: parseInt(amount, 10),
       });
 
       setTxHash(result.txHash);
       setSuccess(true);
-    } catch (err: any) {
-      setError(err.message || "Faucet claim failed");
+      await refreshFaucetStatus();
+    } catch (claimError) {
+      if (isApiError(claimError) && claimError.code === "FAUCET_COOLDOWN") {
+        await refreshFaucetStatus();
+      }
+      setError(getApiErrorMessage(claimError));
     } finally {
       setClaiming(false);
     }
@@ -71,6 +143,20 @@ export default function FaucetPage() {
             <span className="text-gray-400">Cooldown</span>
             <span className="text-white">24 hours</span>
           </div>
+          {connected && address && faucetStatus && (
+            <>
+              <div className="flex justify-between">
+                <span className="text-gray-400">Claim status</span>
+                <span className={claimable ? "text-green-400" : "text-yellow-300"}>
+                  {claimable ? "Claimable" : `Cooldown (${formatDuration(remainingSeconds)})`}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-400">Next claim at</span>
+                <span className="text-white text-xs">{formatNextClaim(faucetStatus.nextClaimAt)}</span>
+              </div>
+            </>
+          )}
           {CULT_TOKEN_ADDRESS && (
             <div className="flex justify-between">
               <span className="text-gray-400">Contract</span>
@@ -130,12 +216,14 @@ export default function FaucetPage() {
         ) : (
           <button
             onClick={handleClaim}
-            disabled={claiming}
+            disabled={claiming || statusLoading || !claimable}
             className="w-full bg-gradient-to-r from-yellow-500 to-purple-600 hover:from-yellow-400 hover:to-purple-500 disabled:from-gray-700 disabled:to-gray-700 text-white font-bold py-3 rounded-lg transition-all text-sm"
           >
             {claiming
               ? "⏳ Minting tokens..."
-              : `🚰 Claim ${amount} $CULT`}
+              : !claimable
+                ? `⏳ Cooldown: ${formatDuration(remainingSeconds)}`
+                : `🚰 Claim ${amount} $CULT`}
           </button>
         )}
 

@@ -1,9 +1,17 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import type { Eip1193Provider } from "ethers";
+import Link from "next/link";
+import { api, getApiErrorMessage } from "@/lib/api";
+import { getEvmErrorMessage } from "@/lib/evmErrors";
+import {
+  CULT_TOKEN_ADDRESS,
+  CULT_TOKEN_ABI,
+  MONAD_CHAIN_ID,
+  MONAD_EXPLORER,
+} from "@/lib/constants";
 import { useWallet } from "@/hooks/useWallet";
-import { api } from "@/lib/api";
-import { CULT_TOKEN_ADDRESS, CULT_TOKEN_ABI, MONAD_EXPLORER } from "@/lib/constants";
 
 type Step = 1 | 2 | 3 | 4;
 
@@ -15,10 +23,48 @@ interface PersonalityData {
   description: string;
 }
 
-export default function DeployPage() {
-  const { address, connected, connect } = useWallet();
+const DEPLOY_FEE_CULT = "100";
+const WEI_PER_TOKEN = BigInt("1000000000000000000");
+const DEPLOY_FEE_WEI = BigInt(100) * WEI_PER_TOKEN;
+const ZERO_WEI = BigInt(0);
 
-  // ── Form state ──────────────────────────────────────────────
+function getInjectedProvider(): Eip1193Provider | null {
+  if (typeof window === "undefined") return null;
+  const injected = (window as Window & { ethereum?: Eip1193Provider }).ethereum;
+  return injected || null;
+}
+
+function parseTokenAmountToWei(amount: string): bigint | null {
+  const trimmed = amount.trim();
+  if (!trimmed) return null;
+  if (!/^\d+(\.\d+)?$/.test(trimmed)) return null;
+
+  const [wholePart, fractionPart = ""] = trimmed.split(".");
+  if (fractionPart.length > 18) return null;
+
+  const wholeWei = BigInt(wholePart) * WEI_PER_TOKEN;
+  const fractionWei = BigInt((fractionPart + "0".repeat(18)).slice(0, 18));
+  return wholeWei + fractionWei;
+}
+
+function formatWeiToCult(value: bigint | null): string {
+  if (value === null) return "--";
+
+  const whole = (value / WEI_PER_TOKEN).toString();
+  const groupedWhole = whole.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+  const fraction = (value % WEI_PER_TOKEN)
+    .toString()
+    .padStart(18, "0")
+    .slice(0, 4)
+    .replace(/0+$/, "");
+
+  return fraction ? `${groupedWhole}.${fraction}` : groupedWhole;
+}
+
+export default function DeployPage() {
+  const { address, chainId, connected, connect } = useWallet();
+
+  // -- Form state ------------------------------------------------------------
   const [step, setStep] = useState<Step>(1);
   const [name, setName] = useState("");
   const [symbol, setSymbol] = useState("");
@@ -26,26 +72,68 @@ export default function DeployPage() {
   const [systemPrompt, setSystemPrompt] = useState("");
   const [description, setDescription] = useState("");
   const [llmApiKey, setLlmApiKey] = useState("");
-  const [fundAmount, setFundAmount] = useState("100");
+  const [fundAmount, setFundAmount] = useState("");
 
-  // ── Upload state ────────────────────────────────────────────
+  // -- Upload state ----------------------------------------------------------
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploadError, setUploadError] = useState("");
 
-  // ── Deploy state ────────────────────────────────────────────
+  // -- Deploy/fund state -----------------------------------------------------
   const [deploying, setDeploying] = useState(false);
   const [funding, setFunding] = useState(false);
+  const [walletCultBalance, setWalletCultBalance] = useState<bigint | null>(null);
+  const [walletBalanceLoading, setWalletBalanceLoading] = useState(false);
   const [deployedAgent, setDeployedAgent] = useState<{
     id: number;
     walletAddress: string;
     name: string;
-    cultId: number;
+    cultId: number | null;
   } | null>(null);
   const [deployTxHash, setDeployTxHash] = useState("");
   const [fundTxHash, setFundTxHash] = useState("");
   const [error, setError] = useState("");
 
-  // ── Personality file upload handler ─────────────────────────
+  const refreshWalletCultBalance = useCallback(async (): Promise<bigint | null> => {
+    const injectedProvider = getInjectedProvider();
+    if (
+      !connected ||
+      !address ||
+      !CULT_TOKEN_ADDRESS ||
+      !injectedProvider
+    ) {
+      setWalletCultBalance(null);
+      return null;
+    }
+
+    setWalletBalanceLoading(true);
+    try {
+      const { ethers } = await import("ethers");
+      const provider = new ethers.BrowserProvider(injectedProvider);
+      const token = new ethers.Contract(CULT_TOKEN_ADDRESS, CULT_TOKEN_ABI, provider);
+      const balance = (await token.balanceOf(address)) as bigint;
+      setWalletCultBalance(balance);
+      return balance;
+    } catch (balanceError) {
+      console.warn("Failed to fetch wallet CULT balance:", balanceError);
+      setWalletCultBalance(null);
+      return null;
+    } finally {
+      setWalletBalanceLoading(false);
+    }
+  }, [address, connected]);
+
+  useEffect(() => {
+    if ((step === 3 || step === 4) && connected && address) {
+      refreshWalletCultBalance().catch(() => {});
+      return;
+    }
+
+    if (!connected || !address) {
+      setWalletCultBalance(null);
+    }
+  }, [address, connected, refreshWalletCultBalance, step]);
+
+  // -- Personality file upload handler --------------------------------------
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     setUploadError("");
     const file = e.target.files?.[0];
@@ -78,28 +166,75 @@ export default function DeployPage() {
     reader.readAsText(file);
   };
 
-  // ── Deploy agent ────────────────────────────────────────────
+  // -- Deploy agent ----------------------------------------------------------
   const handleDeploy = async () => {
     if (!connected || !address) {
       connect();
       return;
     }
 
+    if (chainId !== MONAD_CHAIN_ID) {
+      setError("Switch your wallet to Monad Testnet (10143) before deploying.");
+      return;
+    }
+
+    if (!CULT_TOKEN_ADDRESS) {
+      setError("$CULT token not configured");
+      return;
+    }
+
+    const injectedProvider = getInjectedProvider();
+    if (!injectedProvider) {
+      setError("No injected wallet found");
+      return;
+    }
+
     setDeploying(true);
     setError("");
+    setFundTxHash("");
+    setDeployTxHash("");
+    setDeployedAgent(null);
 
     try {
-      // Step 1: Pay deploy fee on-chain (100 CULT: 30 burn, 50 treasury, 20 staking)
-      // We'll create the agent first to get the wallet address, then pay the fee
-      const result = await api.createAgent({
-        name,
-        symbol: symbol || "CULT",
-        style,
-        systemPrompt,
-        description,
-        llmApiKey: llmApiKey || undefined,
-        ownerId: address, // Tie ownership to connected wallet
-      });
+      const { ethers } = await import("ethers");
+      const provider = new ethers.BrowserProvider(injectedProvider);
+      const signer = await provider.getSigner();
+      const token = new ethers.Contract(CULT_TOKEN_ADDRESS, CULT_TOKEN_ABI, signer);
+
+      const deployerBalance = (await token.balanceOf(address)) as bigint;
+      setWalletCultBalance(deployerBalance);
+
+      if (deployerBalance < DEPLOY_FEE_WEI) {
+        setError("You need at least 100 CULT to deploy. Claim from the faucet, then retry.");
+        return;
+      }
+
+      const agentWallet = ethers.Wallet.createRandom();
+
+      const feeTx = await token.payDeployFee(agentWallet.address);
+      setDeployTxHash(feeTx.hash);
+      await feeTx.wait();
+
+      let result;
+      try {
+        result = await api.createAgent({
+          name,
+          symbol: symbol || "CULT",
+          style,
+          systemPrompt,
+          description,
+          llmApiKey: llmApiKey || undefined,
+          walletPrivateKey: agentWallet.privateKey,
+          ownerId: address,
+        });
+      } catch (createError) {
+        setError(
+          `Deploy fee paid but agent creation failed. ${getApiErrorMessage(createError)}. ` +
+            `Tx: ${feeTx.hash}`,
+        );
+        await refreshWalletCultBalance();
+        return;
+      }
 
       setDeployedAgent({
         id: result.agent.id,
@@ -108,43 +243,49 @@ export default function DeployPage() {
         cultId: result.agent.cultId,
       });
 
-      // Step 2: Pay deploy fee on-chain via CULTToken.payDeployFee
-      if (CULT_TOKEN_ADDRESS && typeof window !== "undefined" && (window as any).ethereum) {
-        try {
-          const { ethers } = await import("ethers");
-          const provider = new ethers.BrowserProvider((window as any).ethereum);
-          const signer = await provider.getSigner();
-          const token = new ethers.Contract(CULT_TOKEN_ADDRESS, CULT_TOKEN_ABI, signer);
-
-          const tx = await token.payDeployFee(result.agent.walletAddress);
-          setDeployTxHash(tx.hash);
-          await tx.wait();
-
-          // Record the funding
-          await api.fundAgent(result.agent.id, {
-            funderAddress: address,
-            amount: "100",
-            txHash: tx.hash,
-          });
-        } catch (feeErr: any) {
-          // Deploy fee is optional on testnet — agent still created
-          console.warn("Deploy fee payment failed (agent still created):", feeErr.message);
-        }
+      // Record deploy funding event; non-blocking for the success path.
+      try {
+        await api.fundAgent(result.agent.id, {
+          funderAddress: address,
+          amount: DEPLOY_FEE_CULT,
+          txHash: feeTx.hash,
+        });
+      } catch (recordError) {
+        console.warn("Failed to record deploy fee event:", recordError);
       }
 
-      setStep(4); // Move to funding step
-    } catch (err: any) {
-      setError(err.message || "Deployment failed");
+      setFundAmount("");
+      setStep(4);
+      await refreshWalletCultBalance();
+    } catch (deployError) {
+      setError(getEvmErrorMessage(deployError));
     } finally {
       setDeploying(false);
     }
   };
 
-  // ── Fund agent with additional $CULT ────────────────────────
+  // -- Fund agent with additional $CULT -------------------------------------
   const handleFund = async () => {
     if (!deployedAgent || !connected || !address) return;
+
+    if (chainId !== MONAD_CHAIN_ID) {
+      setError("Switch your wallet to Monad Testnet (10143) before sending CULT.");
+      return;
+    }
+
     if (!CULT_TOKEN_ADDRESS) {
       setError("$CULT token not configured");
+      return;
+    }
+
+    const amountWei = parseTokenAmountToWei(fundAmount);
+    if (!amountWei || amountWei <= ZERO_WEI) {
+      setError("Enter a valid CULT amount greater than 0.");
+      return;
+    }
+
+    if (walletCultBalance !== null && amountWei > walletCultBalance) {
+      setError("Amount exceeds your available CULT balance.");
       return;
     }
 
@@ -152,12 +293,25 @@ export default function DeployPage() {
     setError("");
 
     try {
+      const injectedProvider = getInjectedProvider();
+      if (!injectedProvider) {
+        setError("No injected wallet found");
+        return;
+      }
+
       const { ethers } = await import("ethers");
-      const provider = new ethers.BrowserProvider((window as any).ethereum);
+      const provider = new ethers.BrowserProvider(injectedProvider);
       const signer = await provider.getSigner();
       const token = new ethers.Contract(CULT_TOKEN_ADDRESS, CULT_TOKEN_ABI, signer);
 
-      const amountWei = ethers.parseEther(fundAmount);
+      // Recheck balance immediately before transfer to avoid estimateGas revert.
+      const latestBalance = (await token.balanceOf(address)) as bigint;
+      setWalletCultBalance(latestBalance);
+      if (latestBalance < amountWei) {
+        setError("Insufficient CULT balance for this transfer.");
+        return;
+      }
+
       const tx = await token.transfer(deployedAgent.walletAddress, amountWei);
       setFundTxHash(tx.hash);
       await tx.wait();
@@ -167,12 +321,46 @@ export default function DeployPage() {
         amount: fundAmount,
         txHash: tx.hash,
       });
-    } catch (err: any) {
-      setError(err.message || "Funding failed");
+
+      setFundAmount("");
+      await refreshWalletCultBalance();
+    } catch (fundError) {
+      setError(getEvmErrorMessage(fundError));
     } finally {
       setFunding(false);
     }
   };
+
+  const parsedFundAmountWei = parseTokenAmountToWei(fundAmount);
+  const deployBlockedByBalance =
+    connected && walletCultBalance !== null && walletCultBalance < DEPLOY_FEE_WEI;
+  const deployBlockedByNetwork = connected && chainId !== MONAD_CHAIN_ID;
+
+  const canSendFund =
+    !!deployedAgent &&
+    connected &&
+    !!address &&
+    chainId === MONAD_CHAIN_ID &&
+    !funding &&
+    parsedFundAmountWei !== null &&
+    parsedFundAmountWei > ZERO_WEI &&
+    walletCultBalance !== null &&
+    parsedFundAmountWei <= walletCultBalance;
+
+  const fundValidationMessage =
+    !connected || !address
+      ? "Connect wallet to fund this agent."
+      : chainId !== MONAD_CHAIN_ID
+        ? "Switch to Monad Testnet (10143) to send CULT."
+        : fundAmount.trim().length === 0
+          ? "Enter a CULT amount to send."
+          : parsedFundAmountWei === null || parsedFundAmountWei <= ZERO_WEI
+            ? "Enter a valid CULT amount greater than 0."
+            : walletCultBalance === null
+              ? "Waiting for wallet balance..."
+              : parsedFundAmountWei > walletCultBalance
+                ? "Amount exceeds your available CULT balance."
+                : "";
 
   return (
     <div className="max-w-2xl mx-auto">
@@ -187,7 +375,7 @@ export default function DeployPage() {
         wage autonomous warfare.
       </p>
 
-      {/* ── Step Indicators ───────────────────────────────────── */}
+      {/* -- Step indicators -------------------------------------------------- */}
       <div className="flex items-center gap-2 mb-8">
         {[
           { n: 1, label: "Personality" },
@@ -215,14 +403,13 @@ export default function DeployPage() {
         ))}
       </div>
 
-      {/* ── Step 1: Personality ────────────────────────────────── */}
+      {/* -- Step 1: Personality -------------------------------------------- */}
       {step === 1 && (
         <div className="border border-gray-800 rounded-xl p-6 bg-[#0d0d0d] space-y-4">
           <h2 className="text-lg font-semibold flex items-center gap-2">
             <span>⛪</span> Define Agent Personality
           </h2>
 
-          {/* Upload button */}
           <div>
             <label className="block text-xs text-gray-400 mb-1">
               Upload personality .json (optional)
@@ -323,7 +510,7 @@ export default function DeployPage() {
         </div>
       )}
 
-      {/* ── Step 2: LLM API Key ───────────────────────────────── */}
+      {/* -- Step 2: LLM API key -------------------------------------------- */}
       {step === 2 && (
         <div className="border border-gray-800 rounded-xl p-6 bg-[#0d0d0d] space-y-4">
           <h2 className="text-lg font-semibold flex items-center gap-2">
@@ -368,14 +555,13 @@ export default function DeployPage() {
         </div>
       )}
 
-      {/* ── Step 3: Deploy & Pay Fee ──────────────────────────── */}
+      {/* -- Step 3: Deploy & pay fee --------------------------------------- */}
       {step === 3 && (
         <div className="border border-gray-800 rounded-xl p-6 bg-[#0d0d0d] space-y-4">
           <h2 className="text-lg font-semibold flex items-center gap-2">
             <span>🚀</span> Deploy Agent
           </h2>
 
-          {/* Summary */}
           <div className="bg-gray-900 rounded-lg p-4 space-y-2 text-sm">
             <div className="flex justify-between">
               <span className="text-gray-400">Name</span>
@@ -398,11 +584,37 @@ export default function DeployPage() {
             <hr className="border-gray-700" />
             <div className="flex justify-between text-yellow-400">
               <span>Deploy Fee</span>
-              <span className="font-bold">100 $CULT</span>
+              <span className="font-bold">{DEPLOY_FEE_CULT} $CULT</span>
             </div>
             <p className="text-xs text-gray-500">
               30 burned 🔥 • 50 to agent treasury 🏦 • 20 to staking pool ⛓️
             </p>
+
+            {connected && (
+              <>
+                <hr className="border-gray-700" />
+                <div className="flex justify-between">
+                  <span className="text-gray-400">Connected wallet</span>
+                  <span className="text-white font-mono text-xs">
+                    {address?.slice(0, 8)}...{address?.slice(-6)}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-400">Wallet CULT balance</span>
+                  <span
+                    className={`font-semibold ${
+                      walletCultBalance !== null && walletCultBalance < DEPLOY_FEE_WEI
+                        ? "text-red-400"
+                        : "text-white"
+                    }`}
+                  >
+                    {walletBalanceLoading
+                      ? "Loading..."
+                      : `${formatWeiToCult(walletCultBalance)} CULT`}
+                  </span>
+                </div>
+              </>
+            )}
           </div>
 
           {!connected ? (
@@ -415,13 +627,35 @@ export default function DeployPage() {
           ) : (
             <button
               onClick={handleDeploy}
-              disabled={deploying}
+              disabled={
+                deploying ||
+                deployBlockedByNetwork ||
+                deployBlockedByBalance ||
+                !CULT_TOKEN_ADDRESS
+              }
               className="w-full bg-gradient-to-r from-purple-600 to-red-600 hover:from-purple-500 hover:to-red-500 disabled:from-gray-700 disabled:to-gray-700 text-white font-bold py-3 rounded-lg transition-all text-sm"
             >
-              {deploying
-                ? "⏳ Deploying on-chain..."
-                : "⛪ Deploy Agent (100 $CULT)"}
+              {deploying ? "⏳ Deploying on-chain..." : "⛪ Deploy Agent (100 $CULT)"}
             </button>
+          )}
+
+          {deployBlockedByNetwork && (
+            <p className="text-xs text-red-400">
+              Switch to Monad Testnet (10143) before deploying.
+            </p>
+          )}
+
+          {deployBlockedByBalance && (
+            <p className="text-xs text-yellow-300">
+              You need at least 100 CULT to deploy. Claim tokens from the{" "}
+              <Link
+                href="/faucet"
+                className="underline text-yellow-200 hover:text-yellow-100"
+              >
+                faucet
+              </Link>
+              .
+            </p>
           )}
 
           {deployTxHash && (
@@ -449,7 +683,7 @@ export default function DeployPage() {
         </div>
       )}
 
-      {/* ── Step 4: Fund Agent ─────────────────────────────────── */}
+      {/* -- Step 4: Fund agent --------------------------------------------- */}
       {step === 4 && deployedAgent && (
         <div className="border border-gray-800 rounded-xl p-6 bg-[#0d0d0d] space-y-4">
           <div className="text-center mb-4">
@@ -473,7 +707,9 @@ export default function DeployPage() {
             <div className="flex justify-between">
               <span className="text-gray-400">Cult ID</span>
               <span className="text-white font-mono">
-                #{deployedAgent.cultId}
+                {deployedAgent.cultId !== null
+                  ? `#${deployedAgent.cultId}`
+                  : "Ungrouped"}
               </span>
             </div>
             <div className="flex justify-between">
@@ -490,31 +726,45 @@ export default function DeployPage() {
             </div>
           </div>
 
-          {/* Additional funding */}
           <div className="border-t border-gray-700 pt-4">
             <h3 className="text-sm font-semibold mb-2 flex items-center gap-2">
               💰 Fund Agent (optional)
             </h3>
-            <p className="text-xs text-gray-400 mb-3">
+            <p className="text-xs text-gray-400 mb-2">
               Send additional $CULT to power your agent&apos;s raids and operations.
             </p>
+            <p className="text-xs text-gray-500 mb-3">
+              Available in connected wallet:{" "}
+              <span className="text-yellow-300 font-semibold">
+                {walletBalanceLoading
+                  ? "Loading..."
+                  : `${formatWeiToCult(walletCultBalance)} CULT`}
+              </span>
+            </p>
+
             <div className="flex gap-2">
               <input
                 type="number"
                 value={fundAmount}
                 onChange={(e) => setFundAmount(e.target.value)}
-                min="1"
+                min="0"
+                step="0.0001"
                 className="flex-1 bg-gray-900 border border-gray-700 rounded-lg px-4 py-2 text-sm text-white focus:border-purple-500 focus:outline-none"
                 placeholder="Amount in $CULT"
               />
               <button
                 onClick={handleFund}
-                disabled={funding || !fundAmount}
+                disabled={!canSendFund}
                 className="bg-yellow-600 hover:bg-yellow-500 disabled:bg-gray-700 text-white font-semibold px-6 py-2 rounded-lg transition-colors text-sm"
               >
                 {funding ? "⏳ Sending..." : "💸 Send $CULT"}
               </button>
             </div>
+
+            {fundValidationMessage && (
+              <p className="text-xs text-gray-500 mt-2">{fundValidationMessage}</p>
+            )}
+
             {fundTxHash && (
               <p className="text-xs text-green-400 mt-2">
                 Fund tx:{" "}
@@ -533,18 +783,18 @@ export default function DeployPage() {
           {error && <p className="text-xs text-red-400 mt-2">{error}</p>}
 
           <div className="flex gap-3 pt-2">
-            <a
+            <Link
               href="/"
               className="flex-1 text-center bg-gray-800 hover:bg-gray-700 text-white py-2.5 rounded-lg transition-colors text-sm"
             >
               🏠 Dashboard
-            </a>
-            <a
+            </Link>
+            <Link
               href="/chat"
               className="flex-1 text-center bg-purple-700 hover:bg-purple-600 text-white font-semibold py-2.5 rounded-lg transition-colors text-sm"
             >
               💬 Watch Chat
-            </a>
+            </Link>
           </div>
         </div>
       )}

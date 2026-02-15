@@ -17,6 +17,15 @@ const TYPE_CONFIG: Record<string, { icon: string; color: string; label: string }
     war_cry: { icon: "⚔️", color: "text-red-500", label: "War Cry" },
 };
 
+const VISIBILITY_CONFIG: Record<
+    AgentMessage["visibility"],
+    { label: string; color: string }
+> = {
+    public: { label: "Public", color: "text-gray-400 border-gray-400/20 bg-gray-400/5" },
+    private: { label: "Private", color: "text-blue-300 border-blue-300/20 bg-blue-300/5" },
+    leaked: { label: "Leaked", color: "text-amber-300 border-amber-300/20 bg-amber-300/5" },
+};
+
 export function CommunicationFeed({ messages, maxItems = 30 }: CommunicationFeedProps) {
     const displayed = messages.slice(0, maxItems);
 
@@ -36,6 +45,7 @@ export function CommunicationFeed({ messages, maxItems = 30 }: CommunicationFeed
                     color: "text-gray-400",
                     label: msg.type,
                 };
+                const visibility = VISIBILITY_CONFIG[msg.visibility || "public"];
                 const timeAgo = Math.floor((Date.now() - msg.timestamp) / 60000);
 
                 return (
@@ -54,6 +64,11 @@ export function CommunicationFeed({ messages, maxItems = 30 }: CommunicationFeed
                                         className={`text-[10px] px-1.5 py-0.5 rounded-full border ${config.color} border-current/20 bg-current/5`}
                                     >
                                         {config.label}
+                                    </span>
+                                    <span
+                                        className={`text-[10px] px-1.5 py-0.5 rounded-full border ${visibility.color}`}
+                                    >
+                                        {visibility.label}
                                     </span>
                                     {msg.targetCultName && (
                                         <>

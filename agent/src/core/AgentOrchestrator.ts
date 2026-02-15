@@ -15,6 +15,8 @@ import { DefectionService } from "../services/DefectionService.js";
 import { CommunicationService } from "../services/CommunicationService.js";
 import { EvolutionService } from "../services/EvolutionService.js";
 import { MarketService } from "../services/MarketService.js";
+import { RandomnessService } from "../services/RandomnessService.js";
+import { GroupGovernanceService } from "../services/GroupGovernanceService.js";
 import { CultAgent, AgentState } from "./CultAgent.js";
 import { loadPersonalities, Personality } from "./AgentPersonality.js";
 import { createLogger } from "../utils/logger.js";
@@ -36,6 +38,7 @@ export class AgentOrchestrator {
 
   private nadFunService: NadFunService;
   private market: MarketService;
+  public randomnessService: RandomnessService;
 
   // Token created on nad.fun
   public cultTokenAddress: string = "";
@@ -51,24 +54,34 @@ export class AgentOrchestrator {
   public defectionService: DefectionService;
   public communicationService: CommunicationService;
   public evolutionService: EvolutionService;
+  public groupGovernanceService: GroupGovernanceService;
 
   constructor() {
     this.nadFunService = new NadFunService();
     this.market = new MarketService();
+    this.randomnessService = new RandomnessService(config.simulationSeed);
 
     // Shared LLM instance for shared services (uses default xAI key)
     const sharedLlm = new LLMService();
 
     this.prophecyService = new ProphecyService(sharedLlm, this.market);
-    this.raidService = new RaidService();
+    this.raidService = new RaidService(this.randomnessService);
     this.lifeDeathService = new LifeDeathService();
     this.memoryService = new MemoryService();
-    this.allianceService = new AllianceService(this.memoryService);
-    this.defectionService = new DefectionService(this.memoryService);
+    this.allianceService = new AllianceService(this.memoryService, this.randomnessService);
+    this.defectionService = new DefectionService(this.memoryService, undefined, this.randomnessService);
     this.evolutionService = new EvolutionService();
+    this.groupGovernanceService = new GroupGovernanceService(
+      this.memoryService,
+      this.randomnessService,
+    );
 
     // These will be re-created per-agent, but shared instances for API reads
-    this.persuasionService = new PersuasionService(sharedLlm, new ContractService());
+    this.persuasionService = new PersuasionService(
+      sharedLlm,
+      new ContractService(),
+      this.randomnessService,
+    );
     this.governanceService = new GovernanceService(sharedLlm);
     this.communicationService = new CommunicationService(sharedLlm, this.memoryService);
   }
@@ -89,6 +102,11 @@ export class AgentOrchestrator {
     }
 
     log.info(`Found ${dbAgents.length} agent(s) in InsForge DB`);
+    log.table("Simulation Randomness", {
+      seed: config.simulationSeed,
+      source: config.simulationSeedSource,
+    });
+    await this.groupGovernanceService.hydrate(dbAgents);
 
     // Check deployer wallet balance for funding agent wallets
     try {
@@ -197,6 +215,8 @@ export class AgentOrchestrator {
       this.evolutionService,
       this.market,
       this.defectionService,
+      this.groupGovernanceService,
+      this.randomnessService,
     );
 
     // Set the agent's DB id so it can persist state
@@ -216,73 +236,11 @@ export class AgentOrchestrator {
       agent.state.dead = row.dead;
       agent.state.deathCause = row.death_cause;
     } else {
-      // Register on-chain — first ensure the agent wallet has funds
-      try {
-        const agentBalance = await agentContractService.getBalance();
-        const minRequired = ethers.parseEther("0.015"); // 0.01 treasury + gas
-
-        if (agentBalance < minRequired) {
-          const fundAmount = ethers.parseEther("0.05"); // send 0.05 MON to cover multiple txs
-          log.info(
-            `Agent wallet ${row.wallet_address} has ${ethers.formatEther(agentBalance)} MON — ` +
-            `needs funding (min ${ethers.formatEther(minRequired)} MON)`
-          );
-
-          // Use the deployer wallet to fund the agent
-          const deployerService = new ContractService(); // uses PRIVATE_KEY from .env
-          try {
-            await deployerService.fundWallet(row.wallet_address, fundAmount);
-          } catch (fundErr: any) {
-            log.errorWithContext(
-              `Cannot fund agent "${row.name}" — deployer wallet may be empty`,
-              fundErr,
-              { agentWallet: row.wallet_address, deployerBalance: ethers.formatEther(await deployerService.getBalance().catch(() => 0n)) },
-            );
-            // Continue without on-chain registration
-            agent.cultId = row.id;
-            agent.state.cultId = row.id;
-            log.warn(`Using DB id ${row.id} as fallback cult id for "${row.name}" (unfunded)`);
-            // Skip the rest of registration
-            this.memoryService.registerAgentDbId(agent.cultId, row.id);
-            this.evolutionService.registerAgentDbId(agent.cultId, row.id);
-
-            const hydrateTimer = log.timer(`Hydrate state for "${personality.name}"`);
-            try {
-              await Promise.all([
-                this.memoryService.hydrate(agent.cultId),
-                this.evolutionService.hydrate(agent.cultId, personality),
-                this.governanceService.hydrate(agent.cultId),
-                this.prophecyService.hydrate(agent.cultId),
-              ]);
-            } catch (hErr: any) {
-              log.errorWithContext(`Partial hydration failure for "${personality.name}"`, hErr, { cultId: agent.cultId });
-            }
-            hydrateTimer();
-
-            this.agents.set(agent.cultId, agent);
-            this.agentsByDbId.set(row.id, agent);
-            this.agentRows.set(row.id, row);
-            return agent;
-          }
-        } else {
-          log.ok(`Agent wallet ${row.wallet_address} has ${ethers.formatEther(agentBalance)} MON — sufficient`);
-        }
-
-        const regTimer = log.timer(`On-chain registration for "${row.name}"`);
-        await agent.initialize(this.cultTokenAddress || ethers.ZeroAddress);
-        // Persist the cult_id back to DB
-        await updateAgentState(row.id, { cult_id: agent.cultId });
-        regTimer();
-        log.ok(`"${row.name}" registered on-chain with cult id ${agent.cultId}`);
-      } catch (err: any) {
-        log.errorWithContext(`Failed to register "${row.name}" on-chain`, err, {
-          dbId: row.id,
-          wallet: row.wallet_address,
-        });
-        agent.cultId = row.id; // Use DB id as fallback
-        agent.state.cultId = row.id;
-        log.warn(`Using DB id ${row.id} as fallback cult id for "${row.name}"`);
-      }
+      // New agents now start ungrouped. They can create/join/switch groups later.
+      const ungroupedSentinel = -row.id;
+      agent.cultId = ungroupedSentinel;
+      agent.state.cultId = ungroupedSentinel;
+      log.info(`"${row.name}" starts ungrouped (agent db id ${row.id})`);
     }
 
     // Register DB ids in services for persistence

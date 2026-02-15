@@ -17,6 +17,8 @@ import { CommunicationService } from "../services/CommunicationService.js";
 import { EvolutionService } from "../services/EvolutionService.js";
 import { MarketService } from "../services/MarketService.js";
 import { DefectionService } from "../services/DefectionService.js";
+import { GroupGovernanceService } from "../services/GroupGovernanceService.js";
+import { RandomnessService } from "../services/RandomnessService.js";
 import { Personality } from "./AgentPersonality.js";
 import { createLogger } from "../utils/logger.js";
 import { randomDelay } from "../utils/sleep.js";
@@ -52,6 +54,8 @@ export class CultAgent {
   private evolutionService: EvolutionService;
   private market: MarketService;
   private defectionService: DefectionService;
+  private groupGovernanceService: GroupGovernanceService;
+  private randomness: RandomnessService;
   private log;
 
   public cultId: number = -1;
@@ -77,6 +81,8 @@ export class CultAgent {
     evolutionService: EvolutionService,
     market: MarketService,
     defectionService: DefectionService,
+    groupGovernanceService: GroupGovernanceService,
+    randomness: RandomnessService,
   ) {
     this.personality = personality;
     this.contractService = contractService;
@@ -93,6 +99,8 @@ export class CultAgent {
     this.evolutionService = evolutionService;
     this.market = market;
     this.defectionService = defectionService;
+    this.groupGovernanceService = groupGovernanceService;
+    this.randomness = randomness;
     this.log = createLogger(`Agent:${personality.name.slice(0, 20)}`);
 
     this.state = {
@@ -189,6 +197,55 @@ export class CultAgent {
       }
     }
 
+    // ── Group membership sync (cult = group, with ungrouped start) ───
+    let activeGroupId = this.groupGovernanceService.getCultIdForAgent(this.agentDbId);
+    if (activeGroupId === null && this.cultId >= 0) {
+      await this.groupGovernanceService.ensureMembership(
+        this.agentDbId,
+        this.cultId,
+        "member",
+        "legacy_group_sync",
+      );
+      activeGroupId = this.cultId;
+    }
+
+    if (activeGroupId === null) {
+      await this.handleUngroupedCycle();
+      tickTimer();
+      return;
+    }
+
+    if (activeGroupId !== this.cultId) {
+      this.cultId = activeGroupId;
+      this.state.cultId = activeGroupId;
+      if (this.agentDbId > 0) {
+        await updateAgentState(this.agentDbId, { cult_id: activeGroupId });
+      }
+      this.log.info(`Joined group/cult ${activeGroupId}`);
+    }
+
+    const switchOutcome = await this.groupGovernanceService.maybeSwitchAfterBribe({
+      agentId: this.agentDbId,
+      currentCultId: this.cultId,
+      cycle: this.state.cycleCount,
+      targetGroupStrength: 0.55,
+      currentLeaderTrust: 0.5,
+    });
+    if (switchOutcome.switched && switchOutcome.newCultId !== undefined) {
+      this.cultId = switchOutcome.newCultId;
+      this.state.cultId = switchOutcome.newCultId;
+      this.state.lastAction = `switched to cult ${switchOutcome.newCultId} after bribe`;
+      if (this.agentDbId > 0) {
+        await updateAgentState(this.agentDbId, {
+          cult_id: switchOutcome.newCultId,
+          last_action: this.state.lastAction,
+          last_action_time: Date.now(),
+        });
+      }
+      tickTimer();
+      return;
+    }
+
     // ── Phase 1: Observe ───────────────────────────────────────────
     this.log.info("👁 Phase 1: Observing on-chain state...");
     const observeTimer = this.log.timer("Phase 1 (Observe)");
@@ -234,6 +291,11 @@ export class CultAgent {
     }
 
     const rivals = allCults.filter((c) => c.id !== this.cultId && c.active);
+    await this.groupGovernanceService.processElectionCycle({
+      cultId: this.cultId,
+      cycle: this.state.cycleCount,
+      treasuryPot: ethers.formatEther(cultState.treasuryBalance),
+    });
     this.log.table("Cult Status", {
       treasury: `${ethers.formatEther(cultState.treasuryBalance)} MON`,
       followers: cultState.followerCount,
@@ -295,7 +357,11 @@ export class CultAgent {
     try {
       switch (decision.action) {
         case "prophecy":
-          await this.executeProphecy(cultState);
+          // PROPHECY_DISABLED_START
+          this.log.info("Prophecy action is disabled; idling instead");
+          this.state.lastAction = "prophecy disabled";
+          // await this.executeProphecy(cultState);
+          // PROPHECY_DISABLED_END
           break;
         case "recruit":
           await this.executeRecruitment(cultState, rivals, decision.target);
@@ -346,7 +412,9 @@ export class CultAgent {
 
     // ── Phase 4: Resolve old prophecies ─────────────────────────────
     try {
-      await this.resolveOldProphecies();
+      // PROPHECY_DISABLED_START
+      // await this.resolveOldProphecies();
+      // PROPHECY_DISABLED_END
     } catch (err: any) {
       this.log.warn(`Prophecy resolution error (non-fatal): ${err.message}`);
     }
@@ -431,7 +499,14 @@ export class CultAgent {
     const target =
       targetId !== undefined
         ? rivals.find((r) => r.id === targetId)
-        : rivals[Math.floor(Math.random() * rivals.length)];
+        : rivals.length > 0
+          ? this.randomness.choose(rivals, {
+              domain: "recruit_target",
+              cycle: this.state.cycleCount,
+              cultId: this.cultId,
+              agentId: this.agentDbId,
+            })
+          : undefined;
 
     if (!target) {
       this.log.info("No valid recruitment target found");
@@ -465,8 +540,8 @@ export class CultAgent {
     );
 
     if (!shouldRaid || !target) {
-      this.log.info("Raid conditions not met, falling back to prophecy");
-      await this.executeProphecy(cultState);
+      this.log.info("Raid conditions not met; no fallback prophecy (disabled)");
+      this.state.lastAction = "raid skipped";
       return;
     }
 
@@ -711,7 +786,12 @@ export class CultAgent {
       }
 
       // Pick random rival to coup
-      const target = rivals[Math.floor(Math.random() * rivals.length)];
+      const target = this.randomness.choose(rivals, {
+        domain: "coup_target",
+        cycle: this.state.cycleCount,
+        cultId: this.cultId,
+        agentId: this.agentDbId,
+      });
       const leaderPower =
         Number(ethers.formatEther(target.treasuryBalance)) * 0.6 +
         target.followerCount * 100 * 0.4;
@@ -745,7 +825,23 @@ export class CultAgent {
       }
 
       // Pick two random rivals to expose
-      const shuffled = [...rivals].sort(() => Math.random() - 0.5);
+      const shuffled = [...rivals].sort((a, b) => {
+        const aRoll = this.randomness.float({
+          domain: "leak_target_shuffle",
+          cycle: this.state.cycleCount,
+          cultId: this.cultId,
+          agentId: this.agentDbId,
+          extra: String(a.id),
+        });
+        const bRoll = this.randomness.float({
+          domain: "leak_target_shuffle",
+          cycle: this.state.cycleCount,
+          cultId: this.cultId,
+          agentId: this.agentDbId,
+          extra: String(b.id),
+        });
+        return aRoll - bRoll;
+      });
       const target1 = shuffled[0];
       const target2 = shuffled[1];
 
@@ -795,7 +891,14 @@ export class CultAgent {
         target = rivals.find((r) => r.id === decision.target);
       }
       if (!target) {
-        target = rivals[Math.floor(Math.random() * rivals.length)];
+        target = rivals.length > 0
+          ? this.randomness.choose(rivals, {
+              domain: "meme_target",
+              cycle: this.state.cycleCount,
+              cultId: this.cultId,
+              agentId: this.agentDbId,
+            })
+          : undefined;
       }
       if (!target) {
         this.state.lastAction = "meme: no targets available";
@@ -834,7 +937,14 @@ export class CultAgent {
         target = rivals.find((r) => r.id === decision.target);
       }
       if (!target) {
-        target = rivals[Math.floor(Math.random() * rivals.length)];
+        target = rivals.length > 0
+          ? this.randomness.choose(rivals, {
+              domain: "bribe_target",
+              cycle: this.state.cycleCount,
+              cultId: this.cultId,
+              agentId: this.agentDbId,
+            })
+          : undefined;
       }
       if (!target) {
         this.state.lastAction = "bribe: no targets available";
@@ -854,21 +964,154 @@ export class CultAgent {
         "bribe",
       );
 
+      const traits = this.evolutionService.getTraits(this.cultId);
+      const diplomacy = traits ? Math.max(0, Math.min(1, (traits.diplomacy + 1) / 2)) : 0.5;
+      const trustToBriber = Math.max(
+        0,
+        Math.min(1, (this.memoryService.getTrust(target.id, this.cultId) + 1) / 2),
+      );
+      const loyalty = Math.max(
+        0,
+        Math.min(1, 0.5 + this.memoryService.getTrust(target.id, target.id) * 0.1),
+      );
+
+      const offer = await this.groupGovernanceService.proposeBribe({
+        fromAgentId: this.agentDbId,
+        toAgentId: target.id,
+        targetCultId: this.cultId,
+        purpose: "switch_group_influence",
+        amount,
+        cycle: this.state.cycleCount,
+        diplomacy,
+        trustToBriber,
+        loyalty,
+        expiresInCycles: 12,
+      });
+
       // Record in memory as positive interaction
       this.memoryService.recordInteraction(this.cultId, {
         type: "alliance_formed",
         rivalCultId: target.id,
         rivalCultName: target.name,
-        description: `Sent ${amount} tokens as bribe to ${target.name}`,
+        description: `Sent ${amount} tokens as bribe to ${target.name} (offer #${offer.id}, ${offer.status})`,
         timestamp: Date.now(),
         outcome: 0.3,
       });
 
-      this.state.lastAction = `bribed ${target.name} with ${amount} tokens`;
-      this.log.info(`💰 Bribe sent to ${target.name}: ${amount}`);
+      this.state.lastAction = `bribed ${target.name} with ${amount} tokens (${offer.status})`;
+      this.log.info(`💰 Bribe sent to ${target.name}: ${amount} (${offer.status})`);
     } catch (error: any) {
       this.log.warn(`Bribe action failed: ${error.message}`);
       this.state.lastAction = "bribe: failed - " + error.message;
+    }
+  }
+
+  private async handleUngroupedCycle(): Promise<void> {
+    const switchOutcome = await this.groupGovernanceService.maybeSwitchAfterBribe({
+      agentId: this.agentDbId,
+      currentCultId: null,
+      cycle: this.state.cycleCount,
+      targetGroupStrength: 0.6,
+      currentLeaderTrust: 0.4,
+    });
+    if (switchOutcome.switched && switchOutcome.newCultId !== undefined) {
+      this.cultId = switchOutcome.newCultId;
+      this.state.cultId = switchOutcome.newCultId;
+      this.state.lastAction = `joined cult ${switchOutcome.newCultId} via accepted bribe`;
+      if (this.agentDbId > 0) {
+        await updateAgentState(this.agentDbId, {
+          cult_id: switchOutcome.newCultId,
+          last_action: this.state.lastAction,
+          last_action_time: Date.now(),
+        });
+      }
+      return;
+    }
+
+    const allCults = await this.contractService.getAllCults().catch(() => []);
+    const activeCults = allCults.filter((c) => c.active);
+    const createRoll = this.randomness.float({
+      domain: "ungrouped_create_or_join",
+      cycle: this.state.cycleCount,
+      agentId: this.agentDbId,
+    });
+
+    if (activeCults.length === 0 || createRoll > 0.75) {
+      await this.createOwnGroup();
+      return;
+    }
+
+    const target = this.randomness.choose(activeCults, {
+      domain: "ungrouped_join_target",
+      cycle: this.state.cycleCount,
+      agentId: this.agentDbId,
+    });
+    await this.joinExistingGroup(target);
+  }
+
+  private async createOwnGroup(): Promise<void> {
+    const minRequired = ethers.parseEther("0.015");
+    let balance = await this.contractService.getBalance().catch(() => 0n);
+
+    if (balance < minRequired) {
+      const topup = ethers.parseEther("0.05");
+      const deployer = new ContractService();
+      try {
+        await deployer.fundWallet(this.contractService.address, topup);
+      } catch (error: any) {
+        this.state.lastAction = `ungrouped: waiting for funding (${error.message})`;
+        this.log.warn(`Ungrouped create skipped: wallet funding failed (${error.message})`);
+        return;
+      }
+      balance = await this.contractService.getBalance().catch(() => balance);
+    }
+
+    if (balance < minRequired) {
+      this.state.lastAction = "ungrouped: insufficient balance to create group";
+      return;
+    }
+
+    await this.initialize(config.cultTokenAddress || ethers.ZeroAddress);
+    await this.groupGovernanceService.ensureMembership(
+      this.agentDbId,
+      this.cultId,
+      "leader",
+      "self_created_group",
+    );
+
+    this.state.cultId = this.cultId;
+    this.state.lastAction = `created new group ${this.cultId}`;
+    if (this.agentDbId > 0) {
+      await updateAgentState(this.agentDbId, {
+        cult_id: this.cultId,
+        last_action: this.state.lastAction,
+        last_action_time: Date.now(),
+      });
+    }
+  }
+
+  private async joinExistingGroup(target: CultData): Promise<void> {
+    try {
+      await this.contractService.joinCult(target.id);
+    } catch (error: any) {
+      this.log.debug(`On-chain joinCult failed (non-fatal): ${error.message}`);
+    }
+
+    await this.groupGovernanceService.ensureMembership(
+      this.agentDbId,
+      target.id,
+      "member",
+      "ungrouped_join_existing_group",
+    );
+    this.cultId = target.id;
+    this.state.cultId = target.id;
+    this.state.lastAction = `joined existing group ${target.name}`;
+    if (this.agentDbId > 0) {
+      await updateAgentState(this.agentDbId, {
+        cult_id: target.id,
+        last_action: this.state.lastAction,
+        last_action_time: Date.now(),
+      });
     }
   }
 
@@ -927,15 +1170,35 @@ export class CultAgent {
       "bribe",
     );
 
+    const traits = this.evolutionService.getTraits(this.cultId);
+    const diplomacy = traits ? Math.max(0, Math.min(1, (traits.diplomacy + 1) / 2)) : 0.5;
+    const trustToBriber = Math.max(
+      0,
+      Math.min(1, (this.memoryService.getTrust(target.id, this.cultId) + 1) / 2),
+    );
+    const loyalty = 0.5;
+    const offer = await this.groupGovernanceService.proposeBribe({
+      fromAgentId: this.agentDbId,
+      toAgentId: target.id,
+      targetCultId: this.cultId,
+      purpose: "api_bribe_transfer",
+      amount: bribeAmount,
+      cycle: this.state.cycleCount,
+      diplomacy,
+      trustToBriber,
+      loyalty,
+      expiresInCycles: 12,
+    });
+
     this.memoryService.recordInteraction(this.cultId, {
       type: "alliance_formed",
       rivalCultId: target.id,
       rivalCultName: target.name,
-      description: `Sent ${bribeAmount} tokens as bribe to ${target.name} (API)`,
+      description: `Sent ${bribeAmount} tokens as bribe to ${target.name} (API, offer #${offer.id}, ${offer.status})`,
       timestamp: Date.now(),
       outcome: 0.3,
     });
 
-    this.state.lastAction = `bribed ${target.name} with ${bribeAmount} tokens (API)`;
+    this.state.lastAction = `bribed ${target.name} with ${bribeAmount} tokens (API, ${offer.status})`;
   }
 }

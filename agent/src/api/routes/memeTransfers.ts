@@ -35,6 +35,35 @@ export function memeTransferRoutes(orchestrator: AgentOrchestrator): Router {
     }
   });
 
+  // GET /api/social/bribes — Bribe offer feed/status
+  router.get("/bribes", async (req: Request, res: Response) => {
+    try {
+      const limit = parseInt((req.query.limit as string) || "100");
+      const cultIdRaw = req.query.cultId as string | undefined;
+      const cultId =
+        cultIdRaw !== undefined ? parseInt(cultIdRaw, 10) : undefined;
+      const statusRaw = req.query.status as string | undefined;
+      const status =
+        statusRaw === "pending" ||
+        statusRaw === "accepted" ||
+        statusRaw === "rejected" ||
+        statusRaw === "expired" ||
+        statusRaw === "executed"
+          ? statusRaw
+          : undefined;
+
+      const offers = orchestrator.groupGovernanceService.getBribeOffers({
+        cultId: Number.isFinite(cultId as number) ? cultId : undefined,
+        status,
+        limit,
+      });
+      res.json(offers);
+    } catch (error: any) {
+      log.error(`Failed to load bribes: ${error.message}`);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   // POST /api/social/memes/send — Trigger a meme send from one agent to another
   router.post("/memes/send", async (req: Request, res: Response) => {
     try {
@@ -49,6 +78,9 @@ export function memeTransferRoutes(orchestrator: AgentOrchestrator): Router {
 
       if (!fromAgent || !toAgent) {
         return res.status(404).json({ error: "Agent not found" });
+      }
+      if (toAgent.cultId < 0) {
+        return res.status(400).json({ error: "Target agent is currently ungrouped" });
       }
 
       // Trigger via the public API method
@@ -78,6 +110,9 @@ export function memeTransferRoutes(orchestrator: AgentOrchestrator): Router {
 
       if (!fromAgent || !toAgent) {
         return res.status(404).json({ error: "Agent not found" });
+      }
+      if (toAgent.cultId < 0) {
+        return res.status(400).json({ error: "Target agent is currently ungrouped" });
       }
 
       // Trigger via the public API method

@@ -9,6 +9,19 @@ interface Props {
 }
 
 export function ProphecyFeed({ prophecies, maxItems = 20 }: Props) {
+  // PROPHECY_DISABLED_START
+  // Rendering of live prophecy items is disabled in runtime UI.
+  // Keep component as a re-enable anchor.
+  // PROPHECY_DISABLED_END
+  const prophecyDisabled = true;
+  if (prophecyDisabled) {
+    return (
+      <div className="text-center text-gray-500 py-8 font-mono">
+        Prophecy feed is disabled.
+      </div>
+    );
+  }
+
   const items = prophecies.slice(0, maxItems);
 
   return (

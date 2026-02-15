@@ -27,6 +27,37 @@ cultRoutes.get("/leaderboard", (_req: Request, res: Response) => {
   res.json(leaderboard);
 });
 
+// GET /api/cults/:id/members - Active group membership roster
+cultRoutes.get("/:id/members", (req: Request, res: Response) => {
+  const id = parseInt(req.params.id as string);
+  const members = (stateStore.groupMemberships || [])
+    .filter((m: any) => m.cultId === id && m.active)
+    .sort((a: any, b: any) => a.joinedAt - b.joinedAt);
+  res.json(members);
+});
+
+// GET /api/cults/:id/leadership/current - Current leader snapshot
+cultRoutes.get("/:id/leadership/current", (req: Request, res: Response) => {
+  const id = parseInt(req.params.id as string);
+  const state = (stateStore.leadershipStates || {})[id] || {
+    cultId: id,
+    leaderAgentId: null,
+    roundIndex: 0,
+    electionId: null,
+    updatedAtCycle: 0,
+  };
+  res.json(state);
+});
+
+// GET /api/cults/:id/leadership/elections - Election history and status
+cultRoutes.get("/:id/leadership/elections", (req: Request, res: Response) => {
+  const id = parseInt(req.params.id as string);
+  const elections = (stateStore.leadershipElections || [])
+    .filter((e: any) => e.cultId === id)
+    .sort((a: any, b: any) => b.openedAt - a.openedAt);
+  res.json(elections);
+});
+
 // GET /api/cults/:id - Get single cult details
 cultRoutes.get("/:id", (req: Request, res: Response) => {
   const id = parseInt(req.params.id as string);
