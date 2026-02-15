@@ -1163,6 +1163,141 @@ export async function loadConversationMessages(options: {
   return (data as ConversationMessageRow[]).reverse();
 }
 
+// ── Feed (Reddit-style) ─────────────────────────────────────────────
+
+export interface FeedPostRow {
+  id: number;
+  agent_id: number;
+  cult_id: number;
+  agent_name: string;
+  cult_name: string;
+  message_type: string;
+  content: string;
+  timestamp: number;
+  thread_id: number | null;
+  reply_count: number;
+  last_reply_at: number | null;
+  participant_count: number;
+}
+
+export async function loadGlobalChatFeed(options: {
+  limit?: number;
+  beforeId?: number;
+  messageType?: string;
+  cultId?: number;
+  sort?: "recent" | "activity";
+}): Promise<{ posts: FeedPostRow[]; nextBeforeId: number | null; hasMore: boolean }> {
+  const limit = options.limit ?? 40;
+  const db = getInsForgeClient().database;
+
+  // Step 1: Load global chat messages
+  let msgQuery = db
+    .from("agent_global_chat")
+    .select()
+    .order("id", { ascending: false })
+    .limit(limit + 1);
+  if (options.beforeId !== undefined) {
+    msgQuery = msgQuery.lt("id", options.beforeId);
+  }
+  if (options.messageType) {
+    msgQuery = msgQuery.eq("message_type", options.messageType);
+  }
+  if (options.cultId !== undefined) {
+    msgQuery = msgQuery.eq("cult_id", options.cultId);
+  }
+  const { data: msgData } = await msgQuery;
+  const messages = (msgData as any[]) || [];
+
+  const hasMore = messages.length > limit;
+  const pageMessages = hasMore ? messages.slice(0, limit) : messages;
+  const nextBeforeId =
+    hasMore && pageMessages.length > 0
+      ? pageMessages[pageMessages.length - 1].id
+      : null;
+
+  if (pageMessages.length === 0) {
+    return { posts: [], nextBeforeId: null, hasMore: false };
+  }
+
+  // Step 2: Load conversation threads to find matching threads
+  // Match by cult_id in participant_cult_ids and recent timestamp
+  const cultIds = [...new Set(pageMessages.map((m: any) => m.cult_id))];
+  const oldestTs = Math.min(...pageMessages.map((m: any) => m.timestamp)) - 5000;
+  let threadQuery = db
+    .from("conversation_threads")
+    .select()
+    .order("updated_at", { ascending: false })
+    .gte("created_at", oldestTs)
+    .limit(500);
+  const { data: threadData } = await threadQuery;
+  const threads = (threadData as ConversationThreadRow[]) || [];
+
+  // Step 3: Load conversation messages for these threads to count replies
+  const threadIds = threads.map((t) => t.id);
+  let threadMsgCounts = new Map<number, { count: number; lastAt: number; participants: Set<number> }>();
+  if (threadIds.length > 0) {
+    const { data: convMsgData } = await db
+      .from("conversation_messages")
+      .select()
+      .in("thread_id", threadIds)
+      .order("id", { ascending: false })
+      .limit(5000);
+    const convMsgs = (convMsgData as ConversationMessageRow[]) || [];
+    for (const cm of convMsgs) {
+      let entry = threadMsgCounts.get(cm.thread_id);
+      if (!entry) {
+        entry = { count: 0, lastAt: 0, participants: new Set() };
+        threadMsgCounts.set(cm.thread_id, entry);
+      }
+      entry.count++;
+      if (cm.timestamp > entry.lastAt) entry.lastAt = cm.timestamp;
+      entry.participants.add(cm.from_agent_id);
+    }
+  }
+
+  // Step 4: Match global chat messages to threads
+  // A thread matches if it shares a cult_id and was created within 5s of the message
+  const posts: FeedPostRow[] = pageMessages.map((msg: any) => {
+    let matchedThread: ConversationThreadRow | undefined;
+    for (const thread of threads) {
+      const threadCults = thread.participant_cult_ids || [];
+      if (
+        threadCults.includes(msg.cult_id) &&
+        Math.abs(thread.created_at - msg.timestamp) < 10000
+      ) {
+        matchedThread = thread;
+        break;
+      }
+    }
+
+    const threadStats = matchedThread
+      ? threadMsgCounts.get(matchedThread.id)
+      : undefined;
+
+    return {
+      id: msg.id,
+      agent_id: msg.agent_id,
+      cult_id: msg.cult_id,
+      agent_name: msg.agent_name,
+      cult_name: msg.cult_name,
+      message_type: msg.message_type,
+      content: msg.content,
+      timestamp: msg.timestamp,
+      thread_id: matchedThread?.id ?? null,
+      reply_count: threadStats ? Math.max(0, threadStats.count - 1) : 0,
+      last_reply_at: threadStats?.lastAt ?? null,
+      participant_count: threadStats?.participants.size ?? 1,
+    };
+  });
+
+  // Step 5: Sort by activity if requested
+  if (options.sort === "activity") {
+    posts.sort((a, b) => (b.last_reply_at ?? b.timestamp) - (a.last_reply_at ?? a.timestamp));
+  }
+
+  return { posts, nextBeforeId, hasMore };
+}
+
 // ── Group Membership Persistence ────────────────────────────────────
 
 export async function saveGroupMembership(

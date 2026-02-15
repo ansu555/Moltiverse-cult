@@ -290,6 +290,15 @@ export class PlannerService {
       });
     }
 
+    // Log plan execution summary
+    log.info(`✅ PLAN EXECUTION for ${executorCtx.cultName}:`);
+    results.forEach((r, i) => {
+      const statusEmoji = r.status === "success" ? "✅" : r.status === "skipped" ? "⏭️" : "❌";
+      const errorMsg = r.error ? ` (${r.error})` : '';
+      const txMsg = r.txHash ? ` [tx: ${r.txHash.slice(0, 10)}...]` : '';
+      log.info(`  ${statusEmoji} Step ${i + 1}: ${r.status}${errorMsg}${txMsg}`);
+    });
+
     return results;
   }
 

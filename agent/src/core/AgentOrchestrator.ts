@@ -107,7 +107,6 @@ export class AgentOrchestrator {
       seed: config.simulationSeed,
       source: config.simulationSeedSource,
     });
-    await this.groupGovernanceService.hydrate(dbAgents);
 
     // Check deployer wallet balance for funding agent wallets
     try {
@@ -123,6 +122,30 @@ export class AgentOrchestrator {
     }
 
     if (dbAgents.length > 0) {
+      // Reconcile cult IDs: DB may have stale cult_ids from a previous contract deployment.
+      // Match agents to on-chain cults by name and fix mismatches.
+      try {
+        const deployer = new ContractService();
+        const onChainCults = await deployer.getAllCults();
+        const onChainByName = new Map(onChainCults.map((c) => [c.name, c.id]));
+        for (const row of dbAgents) {
+          if (row.cult_id === null || row.cult_id < 0) continue;
+          const expectedId = onChainByName.get(row.name);
+          if (expectedId !== undefined && expectedId !== row.cult_id) {
+            log.warn(
+              `Cult ID mismatch for "${row.name}": DB has ${row.cult_id}, on-chain has ${expectedId} — fixing DB`,
+            );
+            await updateAgentState(row.id, { cult_id: expectedId });
+            row.cult_id = expectedId;
+          }
+        }
+      } catch (err: any) {
+        log.warn(`Cult ID reconciliation skipped: ${err.message}`);
+      }
+
+      // Hydrate group governance AFTER cult ID reconciliation so memberships use correct IDs
+      await this.groupGovernanceService.hydrate(dbAgents);
+
       // Resume from persisted agents
       log.info("Resuming from persisted agents...");
       for (const row of dbAgents) {
@@ -186,6 +209,10 @@ export class AgentOrchestrator {
     // Per-agent ContractService (uses agent's own wallet)
     const agentContractService = new ContractService(row.wallet_private_key);
 
+    // Owner ContractService for privileged operations (recordRecruitment, etc.)
+    // Uses deployer wallet which is the cult leader on-chain
+    const ownerContractService = new ContractService(); // Uses PRIVATE_KEY from env
+
     log.table(`Agent: ${row.name}`, {
       wallet: row.wallet_address,
       dbId: row.id,
@@ -219,6 +246,7 @@ export class AgentOrchestrator {
       this.groupGovernanceService,
       this.randomnessService,
       new PlannerService(agentLlm),
+      ownerContractService, // Pass owner service for privileged ops
     );
 
     // Set the agent's DB id so it can persist state

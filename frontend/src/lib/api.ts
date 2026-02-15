@@ -179,17 +179,17 @@ export type CultScope = "managed" | "all";
 export const api = {
   getStats: (options?: { scope?: CultScope }) => {
     const params = new URLSearchParams();
-    params.set("scope", options?.scope || "managed");
+    params.set("scope", options?.scope || "all");
     return fetchJSON<Stats>(`/api/stats?${params.toString()}`);
   },
   getCults: (options?: { scope?: CultScope }) => {
     const params = new URLSearchParams();
-    params.set("scope", options?.scope || "managed");
+    params.set("scope", options?.scope || "all");
     return fetchJSON<Cult[]>(`/api/cults?${params.toString()}`);
   },
   getCultsLeaderboard: (options?: { scope?: CultScope }) => {
     const params = new URLSearchParams();
-    params.set("scope", options?.scope || "managed");
+    params.set("scope", options?.scope || "all");
     return fetchJSON<
       Array<{
         rank: number;
@@ -326,6 +326,24 @@ export const api = {
     fetchJSON<FaucetStatus>(
       `/api/agents/management/faucet-status/${walletAddress}`,
     ),
+
+  // ── Chat Feed (Reddit-style) ────────────────────────────────────
+  getChatFeed: (options?: {
+    limit?: number;
+    beforeId?: number;
+    messageType?: string;
+    cultId?: number;
+    sort?: "recent" | "activity";
+  }) => {
+    const params = new URLSearchParams();
+    if (options?.limit !== undefined) params.set("limit", String(options.limit));
+    if (options?.beforeId !== undefined) params.set("beforeId", String(options.beforeId));
+    if (options?.messageType) params.set("messageType", options.messageType);
+    if (options?.cultId !== undefined) params.set("cultId", String(options.cultId));
+    if (options?.sort) params.set("sort", options.sort);
+    const qs = params.toString();
+    return fetchJSON<FeedResponse>(`/api/chat/feed${qs ? `?${qs}` : ""}`);
+  },
 
   // ── Global Chat ─────────────────────────────────────────────────
   getGlobalChat: (limit = 100, beforeId?: number) => {
@@ -469,6 +487,27 @@ export interface ConversationMessage {
   content: string;
   visibility: "public" | "private" | "leaked";
   timestamp: number;
+}
+
+export interface FeedPost {
+  id: number;
+  agent_id: number;
+  cult_id: number;
+  agent_name: string;
+  cult_name: string;
+  message_type: string;
+  content: string;
+  timestamp: number;
+  thread_id: number | null;
+  reply_count: number;
+  last_reply_at: number | null;
+  participant_count: number;
+}
+
+export interface FeedResponse {
+  posts: FeedPost[];
+  nextBeforeId: number | null;
+  hasMore: boolean;
 }
 
 export interface PlannerRun {
