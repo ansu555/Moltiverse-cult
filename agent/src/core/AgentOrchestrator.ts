@@ -22,10 +22,21 @@ import { CultAgent, AgentState } from "./CultAgent.js";
 import { loadPersonalities, Personality } from "./AgentPersonality.js";
 import { createLogger } from "../utils/logger.js";
 import {
-  loadAllAgents, createAgent, updateAgentState, loadAgentMessages,
-  loadRaids, loadProphecies, loadAllAlliances, loadBetrayals,
-  loadDefections, loadMemes, loadTokenTransfers, loadSpoilsVotes,
-  AgentRow, CreateAgentInput, updateAgentIdentity,
+  loadAllAgents,
+  createAgent,
+  updateAgentState,
+  loadAgentMessages,
+  loadRaids,
+  loadProphecies,
+  loadAllAlliances,
+  loadBetrayals,
+  loadDefections,
+  loadMemes,
+  loadTokenTransfers,
+  loadSpoilsVotes,
+  AgentRow,
+  CreateAgentInput,
+  updateAgentIdentity,
 } from "../services/InsForgeService.js";
 
 const log = createLogger("Orchestrator");
@@ -69,8 +80,15 @@ export class AgentOrchestrator {
     this.raidService = new RaidService(this.randomnessService);
     this.lifeDeathService = new LifeDeathService();
     this.memoryService = new MemoryService();
-    this.allianceService = new AllianceService(this.memoryService, this.randomnessService);
-    this.defectionService = new DefectionService(this.memoryService, undefined, this.randomnessService);
+    this.allianceService = new AllianceService(
+      this.memoryService,
+      this.randomnessService,
+    );
+    this.defectionService = new DefectionService(
+      this.memoryService,
+      undefined,
+      this.randomnessService,
+    );
     this.evolutionService = new EvolutionService();
     this.groupGovernanceService = new GroupGovernanceService(
       this.memoryService,
@@ -84,11 +102,14 @@ export class AgentOrchestrator {
       this.randomnessService,
     );
     this.governanceService = new GovernanceService(sharedLlm);
-    this.communicationService = new CommunicationService(sharedLlm, this.memoryService);
+    this.communicationService = new CommunicationService(
+      sharedLlm,
+      this.memoryService,
+    );
   }
 
   async bootstrap(): Promise<void> {
-    log.section("AgentCult Orchestrator — Bootstrap");
+    log.section("Mocult Orchestrator — Bootstrap");
     const bootTimer = log.timer("Full bootstrap");
 
     // Load existing agents from InsForge DB
@@ -99,7 +120,9 @@ export class AgentOrchestrator {
       log.errorWithContext("Failed to load agents from InsForge DB", err, {
         baseUrl: (await import("../config.js")).config.insforgeBaseUrl,
       });
-      throw new Error(`Bootstrap aborted: cannot connect to InsForge — ${err.message}`);
+      throw new Error(
+        `Bootstrap aborted: cannot connect to InsForge — ${err.message}`,
+      );
     }
 
     log.info(`Found ${dbAgents.length} agent(s) in InsForge DB`);
@@ -116,7 +139,10 @@ export class AgentOrchestrator {
       log.table("Deployer Wallet", {
         address: deployerService.address,
         balance: `${ethers.formatEther(deployerBalance)} MON`,
-        sufficient: Number(deployerBalance) > 0 ? "✅ yes" : "❌ no — agents cannot register on-chain",
+        sufficient:
+          Number(deployerBalance) > 0
+            ? "✅ yes"
+            : "❌ no — agents cannot register on-chain",
       });
     } catch (err: any) {
       log.warn(`Could not check deployer balance: ${err.message}`);
@@ -153,7 +179,10 @@ export class AgentOrchestrator {
           await this.bootstrapAgentFromRow(row);
           log.ok(`Agent "${personality.name}" seeded & bootstrapped`);
         } catch (err: any) {
-          log.errorWithContext(`Failed to seed agent "${personality.name}"`, err);
+          log.errorWithContext(
+            `Failed to seed agent "${personality.name}"`,
+            err,
+          );
         }
       }
     }
@@ -177,7 +206,11 @@ export class AgentOrchestrator {
   private async bootstrapAgentFromRow(row: AgentRow): Promise<CultAgent> {
     // Per-agent LLM (uses agent's own API key if provided, else falls back to default)
     const llmConfig: LLMConfig | undefined = row.llm_api_key
-      ? { apiKey: row.llm_api_key, baseUrl: row.llm_base_url, model: row.llm_model }
+      ? {
+          apiKey: row.llm_api_key,
+          baseUrl: row.llm_base_url,
+          model: row.llm_model,
+        }
       : undefined;
     const agentLlm = new LLMService(llmConfig);
     agentLlm.agentDbId = row.id;
@@ -259,9 +292,13 @@ export class AgentOrchestrator {
         this.prophecyService.hydrate(agent.cultId),
       ]);
     } catch (err: any) {
-      log.errorWithContext(`Partial hydration failure for "${personality.name}"`, err, {
-        cultId: agent.cultId,
-      });
+      log.errorWithContext(
+        `Partial hydration failure for "${personality.name}"`,
+        err,
+        {
+          cultId: agent.cultId,
+        },
+      );
     }
     hydrateTimer();
 
@@ -275,7 +312,9 @@ export class AgentOrchestrator {
   /**
    * Dynamically create a new agent at runtime (user-created with custom system prompt).
    */
-  async createNewAgent(input: CreateAgentInput): Promise<{ agent: CultAgent; row: AgentRow }> {
+  async createNewAgent(
+    input: CreateAgentInput,
+  ): Promise<{ agent: CultAgent; row: AgentRow }> {
     log.section(`Creating New Agent: ${input.name}`);
     const timer = log.timer(`Agent creation: ${input.name}`);
 
@@ -297,7 +336,6 @@ export class AgentOrchestrator {
     });
 
     return { agent, row };
-
   }
 
   private async ensureCultToken(): Promise<void> {
@@ -319,9 +357,9 @@ export class AgentOrchestrator {
     try {
       const { tokenAddress, poolAddress } =
         await this.nadFunService.createToken(
-          "AgentCult",
+          "Mocult",
           "CULT",
-          "ipfs://agentcult-emergent-religious-economies",
+          "ipfs://mocult-emergent-religious-economies",
           ethers.parseEther("0.01"),
         );
 
@@ -345,11 +383,18 @@ export class AgentOrchestrator {
     for (const [id, agent] of this.agents) {
       // Stagger agent starts to avoid RPC spam
       const delay = id * 5000;
-      log.info(`⏳ Agent ${id} ("${agent.personality.name}") will start in ${delay / 1000}s`);
+      log.info(
+        `⏳ Agent ${id} ("${agent.personality.name}") will start in ${
+          delay / 1000
+        }s`,
+      );
       const p = new Promise<void>((resolve) => {
         setTimeout(() => {
           agent.start().catch((err) => {
-            log.errorWithContext(`Agent ${id} ("${agent.personality.name}") crashed`, err);
+            log.errorWithContext(
+              `Agent ${id} ("${agent.personality.name}") crashed`,
+              err,
+            );
           });
           resolve();
         }, delay);
@@ -397,13 +442,20 @@ export class AgentOrchestrator {
   }> {
     const personalities = loadPersonalities(true);
     const rows = this.getAllAgentRows().sort((a, b) => a.id - b.id);
-    const updates: Array<{ agentId: number; name: string; cultId: number | null }> = [];
+    const updates: Array<{
+      agentId: number;
+      name: string;
+      cultId: number | null;
+    }> = [];
     if (personalities.length === 0) {
       throw new Error("No personalities available to apply");
     }
 
     const byName = new Map(
-      personalities.map((personality) => [personality.name.trim().toLowerCase(), personality]),
+      personalities.map((personality) => [
+        personality.name.trim().toLowerCase(),
+        personality,
+      ]),
     );
 
     for (let i = 0; i < rows.length; i++) {

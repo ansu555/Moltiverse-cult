@@ -41,7 +41,9 @@ export default function ChatPage() {
   const [messages, setMessages] = useState<GlobalChatMessage[]>([]);
   const [threads, setThreads] = useState<ConversationThread[]>([]);
   const [selectedThreadId, setSelectedThreadId] = useState<number | null>(null);
-  const [threadMessages, setThreadMessages] = useState<ConversationMessage[]>([]);
+  const [threadMessages, setThreadMessages] = useState<ConversationMessage[]>(
+    [],
+  );
   const [loadingThreadMessages, setLoadingThreadMessages] = useState(false);
   const [sseConnected, setSseConnected] = useState(false);
   const [nextBeforeId, setNextBeforeId] = useState<number | null>(null);
@@ -235,9 +237,15 @@ export default function ChatPage() {
 
   // Group messages by date
   let lastDate = "";
-  const publicThreads = threads.filter((thread) => thread.visibility === "public");
-  const privateThreads = threads.filter((thread) => thread.visibility === "private");
-  const leakedThreads = threads.filter((thread) => thread.visibility === "leaked");
+  const publicThreads = threads.filter(
+    (thread) => thread.visibility === "public",
+  );
+  const privateThreads = threads.filter(
+    (thread) => thread.visibility === "private",
+  );
+  const leakedThreads = threads.filter(
+    (thread) => thread.visibility === "leaked",
+  );
 
   const renderThreadSection = (
     title: string,
@@ -277,7 +285,10 @@ export default function ChatPage() {
     if (!hasMore || loadingHistory) return;
     setLoadingHistory(true);
     try {
-      const payload = await api.getGlobalChatHistory(120, nextBeforeId || undefined);
+      const payload = await api.getGlobalChatHistory(
+        120,
+        nextBeforeId || undefined,
+      );
       setMessages((prev) => mergeMessages(payload.messages, prev));
       setNextBeforeId(payload.nextBeforeId);
       setHasMore(payload.hasMore);
@@ -287,7 +298,7 @@ export default function ChatPage() {
   };
 
   return (
-    <div className="flex flex-col h-[calc(100vh-6rem)]">
+    <div className="max-w-6xl mx-auto px-6 py-8 flex flex-col h-[calc(100vh-6rem)]">
       {/* Header */}
       <div className="flex items-center justify-between mb-4">
         <div>
@@ -303,7 +314,9 @@ export default function ChatPage() {
         </div>
         <div className="flex items-center gap-2 text-xs">
           <span
-            className={`w-2 h-2 rounded-full ${sseConnected ? "bg-green-500 animate-pulse" : "bg-red-500"}`}
+            className={`w-2 h-2 rounded-full ${
+              sseConnected ? "bg-green-500 animate-pulse" : "bg-red-500"
+            }`}
           />
           <span className={sseConnected ? "text-green-400" : "text-red-400"}>
             {sseConnected ? "Live" : "Reconnecting..."}
@@ -323,9 +336,21 @@ export default function ChatPage() {
             <p className="text-xs text-gray-500">No threads yet.</p>
           ) : (
             <div className="space-y-3">
-              {renderThreadSection("Public", publicThreads, "No public threads")}
-              {renderThreadSection("Private", privateThreads, "No private threads")}
-              {renderThreadSection("Leaked", leakedThreads, "No leaked threads")}
+              {renderThreadSection(
+                "Public",
+                publicThreads,
+                "No public threads",
+              )}
+              {renderThreadSection(
+                "Private",
+                privateThreads,
+                "No private threads",
+              )}
+              {renderThreadSection(
+                "Leaked",
+                leakedThreads,
+                "No leaked threads",
+              )}
             </div>
           )}
         </div>
@@ -336,7 +361,9 @@ export default function ChatPage() {
           {loadingThreadMessages ? (
             <p className="text-xs text-gray-500">Loading thread...</p>
           ) : threadMessages.length === 0 ? (
-            <p className="text-xs text-gray-500">Select a thread to inspect messages.</p>
+            <p className="text-xs text-gray-500">
+              Select a thread to inspect messages.
+            </p>
           ) : (
             <div className="space-y-1">
               {threadMessages.slice(-80).map((msg) => (
@@ -345,7 +372,8 @@ export default function ChatPage() {
                   className="text-xs rounded border border-gray-800 px-2 py-1 text-gray-300"
                 >
                   <div className="text-[10px] text-gray-500">
-                    [{msg.message_type}] {new Date(msg.timestamp).toLocaleTimeString()}
+                    [{msg.message_type}]{" "}
+                    {new Date(msg.timestamp).toLocaleTimeString()}
                   </div>
                   <div>{msg.content}</div>
                 </div>
@@ -420,7 +448,9 @@ export default function ChatPage() {
                     </span>
                   </div>
                   <p
-                    className={`text-sm ${MESSAGE_TYPE_COLORS[msg.message_type] || "text-gray-300"}`}
+                    className={`text-sm ${
+                      MESSAGE_TYPE_COLORS[msg.message_type] || "text-gray-300"
+                    }`}
                   >
                     {msg.content}
                   </p>

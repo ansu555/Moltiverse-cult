@@ -1,7 +1,7 @@
 {
-  "name": "agentcult",
+  "name": "mocult",
   "version": "1.0.0",
-  "description": "AgentCult: Emergent Religious Economies - Autonomous AI cult leaders on Monad",
+  "description": "Mocult: Emergent Religious Economies - Autonomous AI cult leaders on Monad",
   "private": true,
   "workspaces": [
     "contracts",
@@ -18,6 +18,9 @@
     "frontend:build": "npm run build --workspace=frontend"
   },
   "dependencies": {
+    "@esbuild/darwin-arm64": "^0.27.3",
+    "@tailwindcss/oxide-darwin-arm64": "^4.1.18",
+    "lightningcss-darwin-arm64": "^1.31.1",
     "openai": "^6.22.0"
   }
 }

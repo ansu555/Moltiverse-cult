@@ -17,12 +17,13 @@ export default function MyAgentsPage() {
   );
 
   // Filter agents owned by current wallet
-  const myAgents = agents?.filter(
-    (a) => connected && address && a.walletAddress // Show all agents — wallet filter done via ownerId match on withdraw
-  ) || [];
+  const myAgents =
+    agents?.filter(
+      (a) => connected && address && a.walletAddress, // Show all agents — wallet filter done via ownerId match on withdraw
+    ) || [];
 
   return (
-    <div className="max-w-4xl mx-auto">
+    <div className="max-w-6xl mx-auto px-6 py-8">
       <h1 className="text-3xl font-bold mb-2 flex items-center gap-3">
         <span>🤖</span>
         <span className="bg-gradient-to-r from-purple-400 to-yellow-400 bg-clip-text text-transparent">
@@ -30,7 +31,8 @@ export default function MyAgentsPage() {
         </span>
       </h1>
       <p className="text-sm text-gray-400 mb-6">
-        View all deployed agents. Connect your wallet to withdraw from agents you own.
+        View all deployed agents. Connect your wallet to withdraw from agents
+        you own.
       </p>
 
       {!connected && (
@@ -86,8 +88,8 @@ export default function MyAgentsPage() {
                     agent.status === "active" && !agent.dead
                       ? "bg-green-500 animate-pulse"
                       : agent.dead
-                        ? "bg-red-500"
-                        : "bg-yellow-500"
+                      ? "bg-red-500"
+                      : "bg-yellow-500"
                   }`}
                 />
                 <div className="text-left">
@@ -171,10 +173,7 @@ export default function MyAgentsPage() {
                 </div>
 
                 {/* Withdraw panel */}
-                <WithdrawPanel
-                  agentId={agent.id}
-                  agentName={agent.name}
-                />
+                <WithdrawPanel agentId={agent.id} agentName={agent.name} />
               </div>
             )}
           </div>

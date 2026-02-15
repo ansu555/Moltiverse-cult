@@ -16,7 +16,7 @@ export default function ArenaPage() {
   );
 
   return (
-    <div className="space-y-6">
+    <div className="max-w-6xl mx-auto px-6 py-8 space-y-6">
       {loadingRaids ? (
         <div className="text-center py-20 text-gray-500 animate-pulse font-mono">
           The arena is being prepared...

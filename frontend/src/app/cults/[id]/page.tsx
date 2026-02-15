@@ -36,7 +36,7 @@ export default function CultDetailPage() {
     totalRaids > 0 ? ((cult.raidWins / totalRaids) * 100).toFixed(0) : "—";
 
   return (
-    <div className="space-y-6">
+    <div className="max-w-6xl mx-auto px-6 py-8 space-y-6">
       {/* Header */}
       <div
         className="rounded-xl p-8 border border-gray-800"
@@ -72,10 +72,7 @@ export default function CultDetailPage() {
             label="Raid Record"
             value={`${cult.raidWins}W / ${cult.raidLosses}L`}
           />
-          <StatBlock
-            label="Win Rate"
-            value={`${winRate}%`}
-          />
+          <StatBlock label="Win Rate" value={`${winRate}%`} />
         </div>
 
         {cult.tokenAddress && (

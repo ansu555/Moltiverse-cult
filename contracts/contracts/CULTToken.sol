@@ -19,7 +19,7 @@ pragma solidity ^0.8.24;
  */
 contract CULTToken {
     // ── ERC-20 storage ──────────────────────────────────────────────
-    string public constant name = "AgentCult Token";
+    string public constant name = "Mocult Token";
     string public constant symbol = "CULT";
     uint8  public constant decimals = 18;
 

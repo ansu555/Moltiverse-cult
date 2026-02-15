@@ -1,12 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import {
-  api,
-  FaucetStatus,
-  getApiErrorMessage,
-  isApiError,
-} from "@/lib/api";
+import { api, FaucetStatus, getApiErrorMessage, isApiError } from "@/lib/api";
 import { CULT_TOKEN_ADDRESS, MONAD_EXPLORER } from "@/lib/constants";
 import { useWallet } from "@/hooks/useWallet";
 
@@ -48,7 +43,10 @@ export default function FaucetPage() {
       const status = await api.getFaucetStatus(address);
       setFaucetStatus(status);
     } catch (statusError) {
-      if (isApiError(statusError) && statusError.code === "TOKEN_NOT_CONFIGURED") {
+      if (
+        isApiError(statusError) &&
+        statusError.code === "TOKEN_NOT_CONFIGURED"
+      ) {
         setError("$CULT token not configured");
       }
       setFaucetStatus(null);
@@ -83,7 +81,11 @@ export default function FaucetPage() {
     }
 
     if (!claimable) {
-      setError(`Faucet cooldown active. Try again in ${formatDuration(remainingSeconds)}.`);
+      setError(
+        `Faucet cooldown active. Try again in ${formatDuration(
+          remainingSeconds,
+        )}.`,
+      );
       return;
     }
 
@@ -112,7 +114,7 @@ export default function FaucetPage() {
   };
 
   return (
-    <div className="max-w-lg mx-auto">
+    <div className="max-w-6xl mx-auto px-6 py-8">
       <div className="text-center mb-8">
         <div className="text-5xl mb-3">🚰</div>
         <h1 className="text-3xl font-bold bg-gradient-to-r from-yellow-400 via-purple-400 to-red-400 bg-clip-text text-transparent">
@@ -129,7 +131,9 @@ export default function FaucetPage() {
         <div className="bg-gray-900 rounded-lg p-4 space-y-2 text-sm">
           <div className="flex justify-between">
             <span className="text-gray-400">Token</span>
-            <span className="text-white font-semibold">$CULT (AgentCult Token)</span>
+            <span className="text-white font-semibold">
+              $CULT (Mocult Token)
+            </span>
           </div>
           <div className="flex justify-between">
             <span className="text-gray-400">Network</span>
@@ -147,13 +151,19 @@ export default function FaucetPage() {
             <>
               <div className="flex justify-between">
                 <span className="text-gray-400">Claim status</span>
-                <span className={claimable ? "text-green-400" : "text-yellow-300"}>
-                  {claimable ? "Claimable" : `Cooldown (${formatDuration(remainingSeconds)})`}
+                <span
+                  className={claimable ? "text-green-400" : "text-yellow-300"}
+                >
+                  {claimable
+                    ? "Claimable"
+                    : `Cooldown (${formatDuration(remainingSeconds)})`}
                 </span>
               </div>
               <div className="flex justify-between">
                 <span className="text-gray-400">Next claim at</span>
-                <span className="text-white text-xs">{formatNextClaim(faucetStatus.nextClaimAt)}</span>
+                <span className="text-white text-xs">
+                  {formatNextClaim(faucetStatus.nextClaimAt)}
+                </span>
               </div>
             </>
           )}
@@ -166,7 +176,8 @@ export default function FaucetPage() {
                 rel="noopener noreferrer"
                 className="text-purple-400 hover:text-purple-300 font-mono text-xs underline"
               >
-                {CULT_TOKEN_ADDRESS.slice(0, 10)}...{CULT_TOKEN_ADDRESS.slice(-6)}
+                {CULT_TOKEN_ADDRESS.slice(0, 10)}...
+                {CULT_TOKEN_ADDRESS.slice(-6)}
               </a>
             </div>
           )}
@@ -222,8 +233,8 @@ export default function FaucetPage() {
             {claiming
               ? "⏳ Minting tokens..."
               : !claimable
-                ? `⏳ Cooldown: ${formatDuration(remainingSeconds)}`
-                : `🚰 Claim ${amount} $CULT`}
+              ? `⏳ Cooldown: ${formatDuration(remainingSeconds)}`
+              : `🚰 Claim ${amount} $CULT`}
           </button>
         )}
 
@@ -274,8 +285,8 @@ export default function FaucetPage() {
             <li className="flex items-start gap-2">
               <span>⛓️</span>
               <span>
-                <strong className="text-gray-300">Stake for faith</strong> — earn
-                faith points and boost your cult
+                <strong className="text-gray-300">Stake for faith</strong> —
+                earn faith points and boost your cult
               </span>
             </li>
           </ul>

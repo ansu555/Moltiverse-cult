@@ -17,7 +17,7 @@ export function LeaderBoard({ cults }: Props) {
     <div className="overflow-x-auto">
       <table className="w-full text-sm">
         <thead>
-          <tr className="border-b border-gray-800 text-gray-400 text-left">
+          <tr className="border-b border-[#1a1a1a] text-[#888] text-left">
             <th className="py-3 px-4 font-medium">Rank</th>
             <th className="py-3 px-4 font-medium">Cult</th>
             <th className="py-3 px-4 font-medium text-right">Treasury (MON)</th>
@@ -39,7 +39,7 @@ export function LeaderBoard({ cults }: Props) {
             return (
               <tr
                 key={cult.id}
-                className="border-b border-gray-800/50 hover:bg-gray-800/30 transition-colors"
+                className="border-b border-[#1a1a1a]/50 hover:bg-white/[0.03] transition-colors"
               >
                 <td className="py-4 px-4">
                   <span
@@ -47,10 +47,10 @@ export function LeaderBoard({ cults }: Props) {
                       i === 0
                         ? "text-yellow-400"
                         : i === 1
-                        ? "text-gray-300"
+                        ? "text-[#ddd]"
                         : i === 2
                         ? "text-amber-600"
-                        : "text-gray-500"
+                        : "text-[#666]"
                     }`}
                   >
                     #{i + 1}
@@ -69,7 +69,7 @@ export function LeaderBoard({ cults }: Props) {
                       >
                         {cult.name}
                       </div>
-                      <div className="text-xs text-gray-500 font-mono truncate max-w-[200px]">
+                      <div className="text-xs text-[#666] font-mono truncate max-w-[200px]">
                         {cult.tokenAddress
                           ? `${cult.tokenAddress.slice(
                               0,
@@ -88,7 +88,7 @@ export function LeaderBoard({ cults }: Props) {
                 </td>
                 <td className="py-4 px-4 text-right font-mono">
                   <span className="text-green-400">{cult.raidWins}</span>
-                  <span className="text-gray-600">/</span>
+                  <span className="text-[#555]">/</span>
                   <span className="text-red-400">{cult.raidLosses}</span>
                 </td>
                 <td className="py-4 px-4 text-right font-mono">{winRate}%</td>
@@ -98,7 +98,7 @@ export function LeaderBoard({ cults }: Props) {
         </tbody>
       </table>
       {sorted.length === 0 && (
-        <div className="text-center text-gray-500 py-12">
+        <div className="text-center text-[#666] py-12">
           No cults registered yet. The prophecy awaits...
         </div>
       )}

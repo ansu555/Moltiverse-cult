@@ -1,13 +1,19 @@
 @import "tailwindcss";
 
 :root {
-  --background: #0a0a0a;
-  --foreground: #ededed;
+  --background: #050505;
+  --foreground: #e8e8e8;
   --cult-purple: #7c3aed;
   --cult-red: #dc2626;
+  --cult-crimson: #b91c1c;
   --cult-gold: #f59e0b;
-  --cult-dark: #111111;
-  --cult-darker: #0d0d0d;
+  --cult-dark: #0c0c0c;
+  --cult-darker: #080808;
+  --cult-border: #1a1a1a;
+  --cult-border-hover: #2a2a2a;
+  --cult-muted: #999;
+  --cult-dim: #666;
+  --cult-surface: #0e0e0e;
 }
 
 @theme inline {
@@ -15,59 +21,155 @@
   --color-foreground: var(--foreground);
   --color-cult-purple: var(--cult-purple);
   --color-cult-red: var(--cult-red);
+  --color-cult-crimson: var(--cult-crimson);
   --color-cult-gold: var(--cult-gold);
   --color-cult-dark: var(--cult-dark);
   --color-cult-darker: var(--cult-darker);
-  --font-sans: "Segoe UI", "Helvetica Neue", Helvetica, Arial, sans-serif;
-  --font-mono: "SFMono-Regular", Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  --color-cult-border: var(--cult-border);
+  --color-cult-surface: var(--cult-surface);
+  --font-sans: var(--font-geist-sans, var(--font-inter)), system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-display: var(--font-playfair-display), Georgia, "Times New Roman", serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, "SFMono-Regular", Menlo, Monaco, Consolas, monospace;
+}
+
+html {
+  font-size: 18px;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: var(--font-sans), Arial, Helvetica, sans-serif;
+  font-family: var(--font-sans);
+  line-height: 1.65;
+  letter-spacing: -0.011em;
 }
 
-/* Glow effects */
+/* ── Hero glow ───────────────────────────────────────────── */
+.hero-glow {
+  position: relative;
+}
+
+.hero-glow::before {
+  content: "";
+  position: absolute;
+  top: -120px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 800px;
+  height: 600px;
+  background: radial-gradient(ellipse at center,
+      rgba(185, 28, 28, 0.15) 0%,
+      rgba(185, 28, 28, 0.06) 30%,
+      rgba(124, 58, 237, 0.03) 50%,
+      transparent 70%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* ── Glow effects ────────────────────────────────────────── */
 .glow-purple {
-  box-shadow: 0 0 20px rgba(124, 58, 237, 0.3), 0 0 60px rgba(124, 58, 237, 0.1);
+  box-shadow: 0 0 20px rgba(124, 58, 237, 0.25), 0 0 60px rgba(124, 58, 237, 0.08);
 }
 
 .glow-red {
-  box-shadow: 0 0 20px rgba(220, 38, 38, 0.3), 0 0 60px rgba(220, 38, 38, 0.1);
+  box-shadow: 0 0 20px rgba(185, 28, 28, 0.25), 0 0 60px rgba(185, 28, 28, 0.08);
 }
 
 .glow-gold {
-  box-shadow: 0 0 20px rgba(245, 158, 11, 0.3), 0 0 60px rgba(245, 158, 11, 0.1);
+  box-shadow: 0 0 20px rgba(245, 158, 11, 0.25), 0 0 60px rgba(245, 158, 11, 0.08);
 }
 
 .glow-text-purple {
-  text-shadow: 0 0 10px rgba(124, 58, 237, 0.5);
+  text-shadow: 0 0 20px rgba(124, 58, 237, 0.4), 0 0 40px rgba(124, 58, 237, 0.15);
 }
 
 .glow-text-red {
-  text-shadow: 0 0 10px rgba(220, 38, 38, 0.5);
+  text-shadow: 0 0 20px rgba(185, 28, 28, 0.4), 0 0 40px rgba(185, 28, 28, 0.15);
 }
 
 .glow-text-gold {
-  text-shadow: 0 0 10px rgba(245, 158, 11, 0.5);
+  text-shadow: 0 0 20px rgba(245, 158, 11, 0.4), 0 0 40px rgba(245, 158, 11, 0.15);
 }
 
-/* Scrollbar */
+/* ── Card style ──────────────────────────────────────────── */
+.cult-card {
+  background: var(--cult-surface);
+  border: 1px solid var(--cult-border);
+  border-radius: 12px;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.cult-card:hover {
+  border-color: var(--cult-border-hover);
+}
+
+/* ── Pill badge ──────────────────────────────────────────── */
+.cult-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 26px;
+  border-radius: 9999px;
+  border: 1px solid var(--cult-border);
+  background: rgba(14, 14, 14, 0.8);
+  font-size: 0.9375rem;
+  color: var(--cult-muted);
+  backdrop-filter: blur(8px);
+  transition: border-color 0.2s ease;
+}
+
+.cult-pill:hover {
+  border-color: var(--cult-border-hover);
+}
+
+.cult-pill .pill-tag {
+  background: var(--cult-crimson);
+  color: white;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 4px 11px;
+  border-radius: 9999px;
+}
+
+/* ── Section header ──────────────────────────────────────── */
+.section-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--foreground);
+  letter-spacing: -0.02em;
+}
+
+.section-header .chevron {
+  color: var(--cult-crimson);
+  font-size: 1.25rem;
+}
+
+/* ── Scrollbar ───────────────────────────────────────────── */
 ::-webkit-scrollbar {
-  width: 6px;
+  width: 5px;
 }
 
 ::-webkit-scrollbar-track {
-  background: #0a0a0a;
+  background: transparent;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #333;
+  background: #222;
   border-radius: 3px;
 }
 
-/* Animations */
+::-webkit-scrollbar-thumb:hover {
+  background: #333;
+}
+
+/* ── Animations ──────────────────────────────────────────── */
 @keyframes pulse-slow {
 
   0%,
@@ -88,7 +190,7 @@ body {
   }
 
   50% {
-    transform: translateY(-10px);
+    transform: translateY(-8px);
   }
 }
 
@@ -98,11 +200,45 @@ body {
   }
 
   50% {
-    background-color: rgba(220, 38, 38, 0.2);
+    background-color: rgba(185, 28, 28, 0.15);
   }
 
   100% {
     background-color: transparent;
+  }
+}
+
+@keyframes glow-pulse {
+
+  0%,
+  100% {
+    opacity: 0.6;
+  }
+
+  50% {
+    opacity: 1;
+  }
+}
+
+@keyframes slide-up {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
   }
 }
 
@@ -116,4 +252,22 @@ body {
 
 .animate-raid-flash {
   animation: raid-flash 0.5s ease-in-out;
+}
+
+.animate-glow-pulse {
+  animation: glow-pulse 3s ease-in-out infinite;
+}
+
+.animate-slide-up {
+  animation: slide-up 0.6s ease-out both;
+}
+
+.animate-fade-in {
+  animation: fade-in 0.4s ease-out both;
+}
+
+/* ── Selection ───────────────────────────────────────────── */
+::selection {
+  background: rgba(185, 28, 28, 0.3);
+  color: white;
 }
