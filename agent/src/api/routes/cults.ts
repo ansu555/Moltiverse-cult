@@ -1,19 +1,21 @@
 import { Router, Request, Response } from "express";
-import { stateStore } from "../server.js";
+import { filterCultsByScope, parseDataScope, stateStore } from "../server.js";
 
 export const cultRoutes = Router();
 
 // GET /api/cults - List all cults sorted by treasury
-cultRoutes.get("/", (_req: Request, res: Response) => {
-  const sorted = [...stateStore.cults].sort(
+cultRoutes.get("/", (req: Request, res: Response) => {
+  const scope = parseDataScope(req.query.scope);
+  const sorted = filterCultsByScope(scope).sort(
     (a, b) => parseFloat(b.treasury) - parseFloat(a.treasury),
   );
   res.json(sorted);
 });
 
 // GET /api/cults/leaderboard - Ranked leaderboard (MUST be before /:id)
-cultRoutes.get("/leaderboard", (_req: Request, res: Response) => {
-  const leaderboard = [...stateStore.cults]
+cultRoutes.get("/leaderboard", (req: Request, res: Response) => {
+  const scope = parseDataScope(req.query.scope);
+  const leaderboard = filterCultsByScope(scope)
     .sort((a, b) => parseFloat(b.treasury) - parseFloat(a.treasury))
     .map((c, i) => ({
       rank: i + 1,
@@ -45,6 +47,9 @@ cultRoutes.get("/:id/leadership/current", (req: Request, res: Response) => {
     roundIndex: 0,
     electionId: null,
     updatedAtCycle: 0,
+    nextElectionCycle: null,
+    currentCycle: 0,
+    etaCycles: null,
   };
   res.json(state);
 });

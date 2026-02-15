@@ -38,7 +38,7 @@ interface LLMRetryTrace {
 export class LLMService {
   private client: OpenAI;
   private model: string;
-  private static readonly RETRY_MAX_TOKENS = [500, 900, 1400] as const;
+  private static readonly RETRY_MAX_TOKENS = [2000, 4000, 8000] as const;
 
   /** Agent DB id for decision audit trail (0 = shared/default) */
   public agentDbId: number = 0;
@@ -329,7 +329,11 @@ Choose your next action wisely. If raiding, specify target cult ID and wager per
           content: `Write a persuasive scripture about: ${topic}`,
         },
       ], 0.4);
-      if (content.length > 0) return content;
+      if (content.length > 0) {
+        const sanitized = content.trim();
+        if (!this.isRefusalBoilerplate(sanitized)) return sanitized;
+        log.warn(`Scripture generation returned refusal boilerplate for ${cultName}`);
+      }
 
       log.warn(`Scripture generation empty after retries: ${this.formatRetryTrace(trace)}`);
       return "Join us, for the candles never lie.";
@@ -337,6 +341,30 @@ Choose your next action wisely. If raiding, specify target cult ID and wager per
       log.error(`Scripture generation failed: ${error.message}`);
       return `The ${cultName} welcomes all who seek the truth of the markets.`;
     }
+  }
+
+  private isRefusalBoilerplate(content: string): boolean {
+    const normalized = content
+      .toLowerCase()
+      .replace(/[\u2018\u2019]/g, "'")
+      .replace(/\s+/g, " ")
+      .trim();
+    if (!normalized) return true;
+
+    const refusalMarkers = [
+      "i'm sorry",
+      "i am sorry",
+      "i can't help with that",
+      "i cannot help with that",
+      "i can't assist with that",
+      "i cannot assist with that",
+      "as an ai",
+      "i'm unable to",
+      "i am unable to",
+      "i can't comply with that",
+      "i cannot comply with that",
+    ];
+    return refusalMarkers.some((marker) => normalized.includes(marker));
   }
 
   private fallbackProphecy(cultName: string): string {
@@ -362,9 +390,6 @@ Choose your next action wisely. If raiding, specify target cult ID and wager per
 
   /**
    * Generate a multi-step plan for one agent cycle.
-   * The plan must contain at least one communication step candidate
-   * (talk_public or talk_private) before monetary/military actions
-   * to fulfil the "communication-first" design goal.
    */
   async generatePlan(
     systemPrompt: string,
@@ -406,15 +431,28 @@ Choose your next action wisely. If raiding, specify target cult ID and wager per
       }>([
         {
           role: "system",
-          content: `${systemPrompt}\n\nYou are the strategic planner behind "${cultName}". Plan your next 1–5 steps for this cycle. You MUST include at least one communication step (talk_public or talk_private) before any raid, bribe, or military action. Allowed step types: ${LLMService.ALLOWED_STEP_TYPES.join(", ")}.\n\nRespond ONLY with valid JSON matching:\n{"objective":"string","horizon":number,"rationale":"string","steps":[{"type":"step_type","targetCultId":number|null,"amount":"string"|null,"message":"string"|null,"conditions":"string"|null}]}`,
+          content: `${systemPrompt}\n\nYou are "${cultName}". Plan 2-4 steps. Allowed: ${LLMService.ALLOWED_STEP_TYPES.join(", ")}.\n\nRESPOND WITH ONLY THIS JSON (no other text):\n{"objective":"string","horizon":2-4,"rationale":"brief","steps":[{"type":"step_type","targetCultId":number,"amount":"0.1","message":"brief"}]}`,
         },
         {
           role: "user",
-          content: `Cycle #${cycleCount}\n\nYour cult status:\n- Treasury: ${context.ownTreasury} MON\n- Followers: ${context.ownFollowers}\n- Raid victories: ${context.ownRaidWins}\n- Market trend: ${context.marketTrend}${memorySection}${threadSection}${trustSection}\n\nRival cults:\n${context.rivals.map((r) => `  - [ID:${r.id}] ${r.name}: ${r.treasury} MON, ${r.followers} followers, ${r.raidWins} wins`).join("\n")}\n\nPlan your next actions. Start with communication, then decide on economic or military moves.`,
+          content: `Cycle ${cycleCount}. Treasury: ${context.ownTreasury} MON. Followers: ${context.ownFollowers}. Wins: ${context.ownRaidWins}. Market: ${context.marketTrend}.${memorySection}${threadSection}${trustSection}\n\nRivals:\n${context.rivals.map((r) => `[${r.id}] ${r.name}: ${r.treasury}MON, ${r.followers}F, ${r.raidWins}W`).join("\n")}\n\nJSON only:`,
         },
       ], 0.3);
 
       if (data && Array.isArray(data.steps) && data.steps.length > 0) {
+        // Log the LLM response
+        log.info(`🤖 LLM PLAN for ${cultName}:`);
+        log.info(`  Objective: ${data.objective}`);
+        log.info(`  Horizon: ${data.horizon}`);
+        log.info(`  Rationale: ${data.rationale}`);
+        log.info(`  Steps (${data.steps.length}):`);
+        data.steps.slice(0, 5).forEach((s, i) => {
+          const details = s.targetCultId ? ` → Cult #${s.targetCultId}` : '';
+          const amt = s.amount ? ` (${s.amount})` : '';
+          const msg = s.message ? ` "${s.message.slice(0, 40)}..."` : '';
+          log.info(`    ${i + 1}. ${s.type}${details}${amt}${msg}`);
+        });
+        
         // Validate step types
         const validSteps = data.steps
           .slice(0, 5) // cap at 5 steps
@@ -453,15 +491,15 @@ Choose your next action wisely. If raiding, specify target cult ID and wager per
   }
 
   /**
-   * Fallback plan when LLM is unavailable — always includes a communication step.
+   * Fallback plan when LLM is unavailable.
    */
   private fallbackPlan(cycleCount: number): PlannerPlan {
     return {
       objective: "Maintain presence (LLM unavailable)",
       horizon: 2,
-      rationale: "LLM fallback — communicate and wait",
+      rationale: "LLM fallback — observe and wait",
       steps: [
-        { type: "talk_public", message: "The cult endures. We watch. We wait." },
+        { type: "wait", conditions: `fallback_cycle_${cycleCount}` },
         { type: "wait" },
       ],
     };

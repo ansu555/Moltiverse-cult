@@ -17,20 +17,21 @@ export default function MyAgentsPage() {
   );
 
   // Filter agents owned by current wallet
-  const myAgents = agents?.filter(
-    (a) => connected && address && a.walletAddress // Show all agents — wallet filter done via ownerId match on withdraw
-  ) || [];
+  const myAgents =
+    agents?.filter(
+      (a) => connected && address && a.walletAddress, // Show all agents — wallet filter done via ownerId match on withdraw
+    ) || [];
 
   return (
-    <div className="max-w-4xl mx-auto">
+    <div className="max-w-6xl mx-auto px-6 py-8">
       <h1 className="text-3xl font-bold mb-2 flex items-center gap-3">
-        <span>🤖</span>
         <span className="bg-gradient-to-r from-purple-400 to-yellow-400 bg-clip-text text-transparent">
           All Agents
         </span>
       </h1>
       <p className="text-sm text-gray-400 mb-6">
-        View all deployed agents. Connect your wallet to withdraw from agents you own.
+        View all deployed agents. Connect your wallet to withdraw from agents
+        you own.
       </p>
 
       {!connected && (
@@ -42,7 +43,7 @@ export default function MyAgentsPage() {
             onClick={connect}
             className="bg-purple-700 hover:bg-purple-600 text-white font-semibold px-6 py-2.5 rounded-lg transition-colors"
           >
-            🔗 Connect Wallet
+            Connect Wallet
           </button>
         </div>
       )}
@@ -55,13 +56,12 @@ export default function MyAgentsPage() {
 
       {!loading && myAgents.length === 0 && (
         <div className="border border-gray-800 rounded-xl p-8 bg-[#0d0d0d] text-center">
-          <p className="text-4xl mb-3">🏗️</p>
           <p className="text-gray-400 mb-2">No agents deployed yet.</p>
           <a
             href="/deploy"
             className="inline-block bg-purple-700 hover:bg-purple-600 text-white font-semibold px-6 py-2.5 rounded-lg transition-colors text-sm"
           >
-            🤖 Deploy Your First Agent
+            Deploy Your First Agent
           </a>
         </div>
       )}
@@ -86,8 +86,8 @@ export default function MyAgentsPage() {
                     agent.status === "active" && !agent.dead
                       ? "bg-green-500 animate-pulse"
                       : agent.dead
-                        ? "bg-red-500"
-                        : "bg-yellow-500"
+                      ? "bg-red-500"
+                      : "bg-yellow-500"
                   }`}
                 />
                 <div className="text-left">
@@ -106,8 +106,8 @@ export default function MyAgentsPage() {
                     {agent.cycleCount} cycles
                   </p>
                   <p>
-                    ⚔️ {agent.raidsWon}/{agent.raidsInitiated} · 🔮{" "}
-                    {agent.propheciesGenerated}
+                    {agent.raidsWon}/{agent.raidsInitiated} raids ·{" "}
+                    {agent.propheciesGenerated} prophecies
                   </p>
                 </div>
                 <span className="text-gray-600">
@@ -122,28 +122,15 @@ export default function MyAgentsPage() {
                 {/* Stats */}
                 <div className="grid grid-cols-4 gap-3">
                   {[
-                    { label: "Raids Won", value: agent.raidsWon, icon: "⚔️" },
-                    {
-                      label: "Prophecies",
-                      value: agent.propheciesGenerated,
-                      icon: "🔮",
-                    },
-                    {
-                      label: "Followers",
-                      value: agent.followersRecruited,
-                      icon: "👥",
-                    },
-                    {
-                      label: "Cycles",
-                      value: agent.cycleCount,
-                      icon: "🔄",
-                    },
-                  ].map(({ label, value, icon }) => (
+                    { label: "Raids Won", value: agent.raidsWon },
+                    { label: "Prophecies", value: agent.propheciesGenerated },
+                    { label: "Followers", value: agent.followersRecruited },
+                    { label: "Cycles", value: agent.cycleCount },
+                  ].map(({ label, value }) => (
                     <div
                       key={label}
                       className="bg-gray-900 rounded-lg p-3 text-center"
                     >
-                      <p className="text-lg">{icon}</p>
                       <p className="text-white font-bold text-sm">{value}</p>
                       <p className="text-[10px] text-gray-500">{label}</p>
                     </div>
@@ -171,10 +158,7 @@ export default function MyAgentsPage() {
                 </div>
 
                 {/* Withdraw panel */}
-                <WithdrawPanel
-                  agentId={agent.id}
-                  agentName={agent.name}
-                />
+                <WithdrawPanel agentId={agent.id} agentName={agent.name} />
               </div>
             )}
           </div>

@@ -28,7 +28,7 @@ export function ProphecyFeed({ prophecies, maxItems = 20 }: Props) {
     <div className="space-y-3">
       {items.map((p) => {
         const color = CULT_COLORS[p.cultId] || "#666";
-        const icon = CULT_ICONS[p.cultId] || "🔮";
+        const icon = CULT_ICONS[p.cultId] || "—";
         const timeAgo = getTimeAgo(p.createdAt);
 
         return (

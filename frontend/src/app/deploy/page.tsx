@@ -81,7 +81,9 @@ export default function DeployPage() {
   // -- Deploy/fund state -----------------------------------------------------
   const [deploying, setDeploying] = useState(false);
   const [funding, setFunding] = useState(false);
-  const [walletCultBalance, setWalletCultBalance] = useState<bigint | null>(null);
+  const [walletCultBalance, setWalletCultBalance] = useState<bigint | null>(
+    null,
+  );
   const [walletBalanceLoading, setWalletBalanceLoading] = useState(false);
   const [deployedAgent, setDeployedAgent] = useState<{
     id: number;
@@ -93,14 +95,11 @@ export default function DeployPage() {
   const [fundTxHash, setFundTxHash] = useState("");
   const [error, setError] = useState("");
 
-  const refreshWalletCultBalance = useCallback(async (): Promise<bigint | null> => {
+  const refreshWalletCultBalance = useCallback(async (): Promise<
+    bigint | null
+  > => {
     const injectedProvider = getInjectedProvider();
-    if (
-      !connected ||
-      !address ||
-      !CULT_TOKEN_ADDRESS ||
-      !injectedProvider
-    ) {
+    if (!connected || !address || !CULT_TOKEN_ADDRESS || !injectedProvider) {
       setWalletCultBalance(null);
       return null;
     }
@@ -109,7 +108,11 @@ export default function DeployPage() {
     try {
       const { ethers } = await import("ethers");
       const provider = new ethers.BrowserProvider(injectedProvider);
-      const token = new ethers.Contract(CULT_TOKEN_ADDRESS, CULT_TOKEN_ABI, provider);
+      const token = new ethers.Contract(
+        CULT_TOKEN_ADDRESS,
+        CULT_TOKEN_ABI,
+        provider,
+      );
       const balance = (await token.balanceOf(address)) as bigint;
       setWalletCultBalance(balance);
       return balance;
@@ -147,10 +150,14 @@ export default function DeployPage() {
     const reader = new FileReader();
     reader.onload = (ev) => {
       try {
-        const parsed = JSON.parse(ev.target?.result as string) as PersonalityData;
+        const parsed = JSON.parse(
+          ev.target?.result as string,
+        ) as PersonalityData;
 
         if (!parsed.name || !parsed.systemPrompt) {
-          setUploadError("JSON must contain at least 'name' and 'systemPrompt' fields");
+          setUploadError(
+            "JSON must contain at least 'name' and 'systemPrompt' fields",
+          );
           return;
         }
 
@@ -199,13 +206,19 @@ export default function DeployPage() {
       const { ethers } = await import("ethers");
       const provider = new ethers.BrowserProvider(injectedProvider);
       const signer = await provider.getSigner();
-      const token = new ethers.Contract(CULT_TOKEN_ADDRESS, CULT_TOKEN_ABI, signer);
+      const token = new ethers.Contract(
+        CULT_TOKEN_ADDRESS,
+        CULT_TOKEN_ABI,
+        signer,
+      );
 
       const deployerBalance = (await token.balanceOf(address)) as bigint;
       setWalletCultBalance(deployerBalance);
 
       if (deployerBalance < DEPLOY_FEE_WEI) {
-        setError("You need at least 100 CULT to deploy. Claim from the faucet, then retry.");
+        setError(
+          "You need at least 100 CULT to deploy. Claim from the faucet, then retry.",
+        );
         return;
       }
 
@@ -229,8 +242,9 @@ export default function DeployPage() {
         });
       } catch (createError) {
         setError(
-          `Deploy fee paid but agent creation failed. ${getApiErrorMessage(createError)}. ` +
-            `Tx: ${feeTx.hash}`,
+          `Deploy fee paid but agent creation failed. ${getApiErrorMessage(
+            createError,
+          )}. ` + `Tx: ${feeTx.hash}`,
         );
         await refreshWalletCultBalance();
         return;
@@ -269,7 +283,9 @@ export default function DeployPage() {
     if (!deployedAgent || !connected || !address) return;
 
     if (chainId !== MONAD_CHAIN_ID) {
-      setError("Switch your wallet to Monad Testnet (10143) before sending CULT.");
+      setError(
+        "Switch your wallet to Monad Testnet (10143) before sending CULT.",
+      );
       return;
     }
 
@@ -302,7 +318,11 @@ export default function DeployPage() {
       const { ethers } = await import("ethers");
       const provider = new ethers.BrowserProvider(injectedProvider);
       const signer = await provider.getSigner();
-      const token = new ethers.Contract(CULT_TOKEN_ADDRESS, CULT_TOKEN_ABI, signer);
+      const token = new ethers.Contract(
+        CULT_TOKEN_ADDRESS,
+        CULT_TOKEN_ABI,
+        signer,
+      );
 
       // Recheck balance immediately before transfer to avoid estimateGas revert.
       const latestBalance = (await token.balanceOf(address)) as bigint;
@@ -333,7 +353,9 @@ export default function DeployPage() {
 
   const parsedFundAmountWei = parseTokenAmountToWei(fundAmount);
   const deployBlockedByBalance =
-    connected && walletCultBalance !== null && walletCultBalance < DEPLOY_FEE_WEI;
+    connected &&
+    walletCultBalance !== null &&
+    walletCultBalance < DEPLOY_FEE_WEI;
   const deployBlockedByNetwork = connected && chainId !== MONAD_CHAIN_ID;
 
   const canSendFund =
@@ -351,28 +373,27 @@ export default function DeployPage() {
     !connected || !address
       ? "Connect wallet to fund this agent."
       : chainId !== MONAD_CHAIN_ID
-        ? "Switch to Monad Testnet (10143) to send CULT."
-        : fundAmount.trim().length === 0
-          ? "Enter a CULT amount to send."
-          : parsedFundAmountWei === null || parsedFundAmountWei <= ZERO_WEI
-            ? "Enter a valid CULT amount greater than 0."
-            : walletCultBalance === null
-              ? "Waiting for wallet balance..."
-              : parsedFundAmountWei > walletCultBalance
-                ? "Amount exceeds your available CULT balance."
-                : "";
+      ? "Switch to Monad Testnet (10143) to send CULT."
+      : fundAmount.trim().length === 0
+      ? "Enter a CULT amount to send."
+      : parsedFundAmountWei === null || parsedFundAmountWei <= ZERO_WEI
+      ? "Enter a valid CULT amount greater than 0."
+      : walletCultBalance === null
+      ? "Waiting for wallet balance..."
+      : parsedFundAmountWei > walletCultBalance
+      ? "Amount exceeds your available CULT balance."
+      : "";
 
   return (
-    <div className="max-w-2xl mx-auto">
+    <div className="max-w-6xl mx-auto px-6 py-8">
       <h1 className="text-3xl font-bold mb-2 flex items-center gap-3">
-        <span>🤖</span>
         <span className="bg-gradient-to-r from-purple-400 via-red-400 to-yellow-400 bg-clip-text text-transparent">
           Deploy Your Cult Agent
         </span>
       </h1>
       <p className="text-gray-400 mb-8 text-sm">
-        Name your agent, define its personality, fund it with $CULT, and watch it
-        wage autonomous warfare.
+        Name your agent, define its personality, fund it with $CULT, and watch
+        it wage autonomous warfare.
       </p>
 
       {/* -- Step indicators -------------------------------------------------- */}
@@ -394,7 +415,9 @@ export default function DeployPage() {
               {step > n ? "✓" : n}
             </div>
             <span
-              className={`text-xs ${step >= n ? "text-purple-300" : "text-gray-600"}`}
+              className={`text-xs ${
+                step >= n ? "text-purple-300" : "text-gray-600"
+              }`}
             >
               {label}
             </span>
@@ -407,7 +430,7 @@ export default function DeployPage() {
       {step === 1 && (
         <div className="border border-gray-800 rounded-xl p-6 bg-[#0d0d0d] space-y-4">
           <h2 className="text-lg font-semibold flex items-center gap-2">
-            <span>⛪</span> Define Agent Personality
+            Define Agent Personality
           </h2>
 
           <div>
@@ -425,7 +448,7 @@ export default function DeployPage() {
               onClick={() => fileInputRef.current?.click()}
               className="px-4 py-2 bg-gray-800 hover:bg-gray-700 border border-gray-600 rounded-lg text-sm transition-colors"
             >
-              📂 Choose File
+              Choose File
             </button>
             {uploadError && (
               <p className="text-red-400 text-xs mt-1">{uploadError}</p>
@@ -463,12 +486,12 @@ export default function DeployPage() {
               onChange={(e) => setStyle(e.target.value)}
               className="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2 text-sm text-white focus:border-purple-500 focus:outline-none"
             >
-              <option value="mystical">🔮 Mystical</option>
-              <option value="aggressive">⚔️ Aggressive</option>
-              <option value="stoic">🗿 Stoic</option>
-              <option value="chaotic">🌀 Chaotic</option>
-              <option value="diplomatic">🤝 Diplomatic</option>
-              <option value="custom">✨ Custom</option>
+              <option value="mystical">Mystical</option>
+              <option value="aggressive">Aggressive</option>
+              <option value="stoic">Stoic</option>
+              <option value="chaotic">Chaotic</option>
+              <option value="diplomatic">Diplomatic</option>
+              <option value="custom">Custom</option>
             </select>
           </div>
 
@@ -514,7 +537,7 @@ export default function DeployPage() {
       {step === 2 && (
         <div className="border border-gray-800 rounded-xl p-6 bg-[#0d0d0d] space-y-4">
           <h2 className="text-lg font-semibold flex items-center gap-2">
-            <span>🧠</span> LLM Configuration
+            LLM Configuration
           </h2>
           <p className="text-sm text-gray-400">
             Your agent needs an LLM to think. Paste your xAI/Grok API key, or
@@ -533,8 +556,8 @@ export default function DeployPage() {
               className="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2 text-sm text-white focus:border-purple-500 focus:outline-none font-mono"
             />
             <p className="text-xs text-gray-600 mt-1">
-              🔒 Encrypted and never exposed via API. If blank, the system
-              default key is used.
+              Encrypted and never exposed via API. If blank, the system default
+              key is used.
             </p>
           </div>
 
@@ -559,7 +582,7 @@ export default function DeployPage() {
       {step === 3 && (
         <div className="border border-gray-800 rounded-xl p-6 bg-[#0d0d0d] space-y-4">
           <h2 className="text-lg font-semibold flex items-center gap-2">
-            <span>🚀</span> Deploy Agent
+            Deploy Agent
           </h2>
 
           <div className="bg-gray-900 rounded-lg p-4 space-y-2 text-sm">
@@ -587,7 +610,7 @@ export default function DeployPage() {
               <span className="font-bold">{DEPLOY_FEE_CULT} $CULT</span>
             </div>
             <p className="text-xs text-gray-500">
-              30 burned 🔥 • 50 to agent treasury 🏦 • 20 to staking pool ⛓️
+              30 burned · 50 to agent treasury · 20 to staking pool
             </p>
 
             {connected && (
@@ -603,7 +626,8 @@ export default function DeployPage() {
                   <span className="text-gray-400">Wallet CULT balance</span>
                   <span
                     className={`font-semibold ${
-                      walletCultBalance !== null && walletCultBalance < DEPLOY_FEE_WEI
+                      walletCultBalance !== null &&
+                      walletCultBalance < DEPLOY_FEE_WEI
                         ? "text-red-400"
                         : "text-white"
                     }`}
@@ -622,7 +646,7 @@ export default function DeployPage() {
               onClick={connect}
               className="w-full bg-purple-700 hover:bg-purple-600 text-white font-semibold py-2.5 rounded-lg transition-colors text-sm"
             >
-              🔗 Connect Wallet to Deploy
+              Connect Wallet to Deploy
             </button>
           ) : (
             <button
@@ -635,7 +659,7 @@ export default function DeployPage() {
               }
               className="w-full bg-gradient-to-r from-purple-600 to-red-600 hover:from-purple-500 hover:to-red-500 disabled:from-gray-700 disabled:to-gray-700 text-white font-bold py-3 rounded-lg transition-all text-sm"
             >
-              {deploying ? "⏳ Deploying on-chain..." : "⛪ Deploy Agent (100 $CULT)"}
+              {deploying ? "Deploying on-chain..." : "Deploy Agent (100 $CULT)"}
             </button>
           )}
 
@@ -687,7 +711,6 @@ export default function DeployPage() {
       {step === 4 && deployedAgent && (
         <div className="border border-gray-800 rounded-xl p-6 bg-[#0d0d0d] space-y-4">
           <div className="text-center mb-4">
-            <div className="text-4xl mb-2">✅</div>
             <h2 className="text-lg font-bold text-green-400">
               Agent Deployed Successfully!
             </h2>
@@ -728,10 +751,11 @@ export default function DeployPage() {
 
           <div className="border-t border-gray-700 pt-4">
             <h3 className="text-sm font-semibold mb-2 flex items-center gap-2">
-              💰 Fund Agent (optional)
+              Fund Agent (optional)
             </h3>
             <p className="text-xs text-gray-400 mb-2">
-              Send additional $CULT to power your agent&apos;s raids and operations.
+              Send additional $CULT to power your agent&apos;s raids and
+              operations.
             </p>
             <p className="text-xs text-gray-500 mb-3">
               Available in connected wallet:{" "}
@@ -757,12 +781,14 @@ export default function DeployPage() {
                 disabled={!canSendFund}
                 className="bg-yellow-600 hover:bg-yellow-500 disabled:bg-gray-700 text-white font-semibold px-6 py-2 rounded-lg transition-colors text-sm"
               >
-                {funding ? "⏳ Sending..." : "💸 Send $CULT"}
+                {funding ? "Sending..." : "Send $CULT"}
               </button>
             </div>
 
             {fundValidationMessage && (
-              <p className="text-xs text-gray-500 mt-2">{fundValidationMessage}</p>
+              <p className="text-xs text-gray-500 mt-2">
+                {fundValidationMessage}
+              </p>
             )}
 
             {fundTxHash && (
@@ -787,13 +813,13 @@ export default function DeployPage() {
               href="/"
               className="flex-1 text-center bg-gray-800 hover:bg-gray-700 text-white py-2.5 rounded-lg transition-colors text-sm"
             >
-              🏠 Dashboard
+              Dashboard
             </Link>
             <Link
               href="/chat"
               className="flex-1 text-center bg-purple-700 hover:bg-purple-600 text-white font-semibold py-2.5 rounded-lg transition-colors text-sm"
             >
-              💬 Watch Chat
+              Watch Chat
             </Link>
           </div>
         </div>

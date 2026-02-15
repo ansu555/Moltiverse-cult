@@ -7,18 +7,18 @@ export function WalletButton() {
 
   if (connected && address) {
     return (
-      <div className="flex items-center gap-2">
-        <div className="flex items-center gap-1.5 bg-gray-900 border border-gray-700 rounded-lg px-3 py-1.5">
-          <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
-          <span className="text-xs font-mono text-gray-300">
+      <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-1.5 bg-white/[0.04] border border-[#1a1a1a] rounded-md px-2.5 py-1">
+          <span className="w-1.5 h-1.5 bg-green-500 rounded-full" />
+          <span className="text-xs font-mono text-[#999]">
             {address.slice(0, 6)}...{address.slice(-4)}
           </span>
         </div>
         <button
           onClick={disconnect}
-          className="text-xs text-gray-500 hover:text-red-400 transition-colors px-2 py-1"
+          className="text-xs text-[#666] hover:text-red-400 transition-colors px-1.5 py-1"
         >
-          ✕
+          &times;
         </button>
       </div>
     );
@@ -28,12 +28,12 @@ export function WalletButton() {
     <div className="flex flex-col items-end gap-1">
       <button
         onClick={connect}
-        className="bg-purple-700 hover:bg-purple-600 text-white text-xs font-semibold px-4 py-1.5 rounded-lg transition-colors flex items-center gap-1.5"
+        className="bg-white/[0.06] hover:bg-white/[0.1] border border-[#1a1a1a] hover:border-[#2a2a2a] text-white text-xs font-medium px-3.5 py-1.5 rounded-md transition-colors"
       >
-        <span>🔗</span> Connect Wallet
+        Connect
       </button>
       {error && (
-        <span className="text-[10px] text-red-400 max-w-[200px] text-right">
+        <span className="text-[11px] text-red-400 max-w-[200px] text-right">
           {error}
         </span>
       )}

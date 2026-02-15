@@ -4,7 +4,11 @@ import { useState, useCallback } from "react";
 import { useWallet } from "@/hooks/useWallet";
 import { usePolling } from "@/hooks/usePolling";
 import { api, AgentBalance, ManagedAgent } from "@/lib/api";
-import { CULT_TOKEN_ADDRESS, CULT_TOKEN_ABI, MONAD_EXPLORER } from "@/lib/constants";
+import {
+  CULT_TOKEN_ADDRESS,
+  CULT_TOKEN_ABI,
+  MONAD_EXPLORER,
+} from "@/lib/constants";
 
 interface WithdrawPanelProps {
   agentId: number;
@@ -63,7 +67,7 @@ export function WithdrawPanel({ agentId, agentName }: WithdrawPanelProps) {
   return (
     <div className="border border-gray-800 rounded-xl p-5 bg-[#0d0d0d]">
       <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
-        <span>💰</span> {agentName} — Wallet & Withdraw
+        {agentName} — Wallet & Withdraw
       </h3>
 
       {/* Balance display */}
@@ -122,12 +126,13 @@ export function WithdrawPanel({ agentId, agentName }: WithdrawPanelProps) {
               disabled={withdrawing || !amount}
               className="bg-red-700 hover:bg-red-600 disabled:bg-gray-700 disabled:text-gray-500 text-white font-semibold px-5 py-2 rounded-lg transition-colors text-sm"
             >
-              {withdrawing ? "⏳..." : "Withdraw"}
+              {withdrawing ? "..." : "Withdraw"}
             </button>
           </div>
 
           <p className="text-[10px] text-gray-600">
-            Only the deploying wallet ({address.slice(0, 6)}...{address.slice(-4)}) can withdraw.
+            Only the deploying wallet ({address.slice(0, 6)}...
+            {address.slice(-4)}) can withdraw.
           </p>
         </div>
       ) : (
@@ -135,16 +140,14 @@ export function WithdrawPanel({ agentId, agentName }: WithdrawPanelProps) {
           onClick={connect}
           className="w-full bg-purple-700 hover:bg-purple-600 text-white text-sm font-semibold py-2.5 rounded-lg transition-colors"
         >
-          🔗 Connect Wallet to Withdraw
+          Connect Wallet to Withdraw
         </button>
       )}
 
       {/* Transaction result */}
       {txHash && (
         <div className="mt-3 bg-green-900/30 border border-green-700 rounded-lg p-3 text-center">
-          <p className="text-green-400 text-xs mb-1">
-            ✅ Withdrawal successful!
-          </p>
+          <p className="text-green-400 text-xs mb-1">Withdrawal successful!</p>
           <a
             href={`${MONAD_EXPLORER}/tx/${txHash}`}
             target="_blank"
@@ -156,9 +159,7 @@ export function WithdrawPanel({ agentId, agentName }: WithdrawPanelProps) {
         </div>
       )}
 
-      {error && (
-        <p className="mt-2 text-xs text-red-400">{error}</p>
-      )}
+      {error && <p className="mt-2 text-xs text-red-400">{error}</p>}
     </div>
   );
 }

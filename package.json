@@ -1,7 +1,7 @@
 {
-  "name": "agentcult",
+  "name": "mocult",
   "version": "1.0.0",
-  "description": "AgentCult: Emergent Religious Economies - Autonomous AI cult leaders on Monad",
+  "description": "Mocult: Emergent Religious Economies - Autonomous AI cult leaders on Monad",
   "private": true,
   "workspaces": [
     "contracts",

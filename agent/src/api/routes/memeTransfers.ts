@@ -57,7 +57,29 @@ export function memeTransferRoutes(orchestrator: AgentOrchestrator): Router {
         status,
         limit,
       });
-      res.json(offers);
+      const transferRows = await loadTokenTransfers(Math.max(limit * 8, 200));
+      const now = Date.now();
+      const enriched = offers.map((offer: any) => {
+        const createdAt = Number(offer.createdAt || offer.created_at || 0);
+        const matchedTransfer = transferRows.find((row: any) => {
+          if (row.from_agent_id !== offer.from_agent_id) return false;
+          if (row.to_agent_id !== offer.to_agent_id) return false;
+          if (!String(row.purpose || "").startsWith("bribe")) return false;
+          if (String(row.amount) !== String(offer.amount)) return false;
+          if (!createdAt) return true;
+          return row.timestamp >= createdAt - 5 * 60 * 1000 && row.timestamp <= now + 5 * 60 * 1000;
+        });
+        return {
+          ...offer,
+          transferTxHash: matchedTransfer?.tx_hash || null,
+          transferStatus: matchedTransfer
+            ? matchedTransfer?.tx_hash
+              ? "confirmed"
+              : "failed"
+            : "unknown",
+        };
+      });
+      res.json(enriched);
     } catch (error: any) {
       log.error(`Failed to load bribes: ${error.message}`);
       res.status(500).json({ error: error.message });
@@ -124,7 +146,11 @@ export function memeTransferRoutes(orchestrator: AgentOrchestrator): Router {
       });
     } catch (error: any) {
       log.error(`Token transfer failed: ${error.message}`);
-      res.status(500).json({ error: error.message });
+      const statusCode = String(error?.message || "").toLowerCase().includes("insufficient")
+        || String(error?.message || "").toLowerCase().includes("skipped")
+        ? 400
+        : 500;
+      res.status(statusCode).json({ error: error.message });
     }
   });
 

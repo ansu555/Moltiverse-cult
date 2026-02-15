@@ -1,69 +1,159 @@
 "use client";
 
+import React from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname } from "next/navigation";
+import { Button, buttonVariants } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
+import { MenuToggleIcon } from "@/components/ui/menu-toggle-icon";
+import { useScroll } from "@/components/ui/use-scroll";
 import { WalletButton } from "./WalletButton";
 
 const links = [
-  { href: "/", label: "Dashboard", icon: "⛪" },
-  { href: "/cults", label: "Leaderboard", icon: "🏆" },
-  { href: "/arena", label: "Raid Arena", icon: "⚔️" },
-  { href: "/governance", label: "Governance", icon: "🏛️" },
-  { href: "/alliances", label: "Alliances", icon: "🤝" },
-  // PROPHECY_DISABLED_START
-  // { href: "/prophecies", label: "Prophecies", icon: "🔮" },
-  // PROPHECY_DISABLED_END
-  { href: "/chat", label: "Chat", icon: "💬" },
-  { href: "/deploy", label: "Deploy", icon: "🤖" },
-  { href: "/faucet", label: "Faucet", icon: "🚰" },
+  { href: "/", label: "Home" },
+  { href: "/cults", label: "Leaderboard" },
+  { href: "/arena", label: "Arena" },
+  { href: "/governance", label: "Governance" },
+  { href: "/alliances", label: "Alliances" },
+  { href: "/chat", label: "Chat" },
+  { href: "/deploy", label: "Deploy" },
+  { href: "/agents", label: "Agents" },
 ];
 
 export function Navbar() {
+  const [open, setOpen] = React.useState(false);
+  const scrolled = useScroll(10);
   const pathname = usePathname();
 
-  return (
-    <nav className="border-b border-gray-800 bg-[#0d0d0d]/80 backdrop-blur-md sticky top-0 z-50">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex items-center justify-between h-16">
-          {/* Logo */}
-          <Link href="/" className="flex items-center gap-2 group">
-            <span className="text-2xl">🏛️</span>
-            <span className="text-xl font-bold bg-gradient-to-r from-purple-400 via-red-400 to-yellow-400 bg-clip-text text-transparent">
-              AgentCult
-            </span>
-          </Link>
+  React.useEffect(() => {
+    document.body.style.overflow = open ? "hidden" : "";
+    return () => {
+      document.body.style.overflow = "";
+    };
+  }, [open]);
 
-          {/* Nav Links */}
-          <div className="flex items-center gap-1">
-            {links.map(({ href, label, icon }) => {
+  // Close mobile menu on route change
+  React.useEffect(() => {
+    setOpen(false);
+  }, [pathname]);
+
+  return (
+    <header
+      className={cn(
+        "sticky top-0 z-50 mx-auto w-full max-w-6xl border-b border-transparent md:rounded-md md:border md:transition-all md:ease-out",
+        {
+          "bg-[#050505]/95 supports-[backdrop-filter]:bg-[#050505]/50 border-[#1a1a1a] backdrop-blur-lg md:top-4 md:max-w-5xl md:shadow-lg md:shadow-black/20":
+            scrolled && !open,
+          "bg-[#050505]/90": open,
+        },
+      )}
+    >
+      <nav
+        className={cn(
+          "flex h-16 w-full items-center justify-between px-5 md:h-14 md:transition-all md:ease-out",
+          {
+            "md:px-2": scrolled,
+          },
+        )}
+      >
+        {/* Logo */}
+        <Link href="/" className="flex items-center gap-2 shrink-0">
+          <Image
+            src="/logo.png"
+            alt="Mocult"
+            width={96}
+            height={96}
+            className="w-10 h-10 object-contain"
+          />
+          <span className="text-lg font-bold text-white tracking-tight">
+            Mocult
+          </span>
+        </Link>
+
+        {/* Desktop nav */}
+        <div className="hidden items-center gap-1 md:flex">
+          {links.map(({ href, label }) => {
+            const active = pathname === href;
+            return (
+              <Link
+                key={href}
+                href={href}
+                className={cn(
+                  buttonVariants({ variant: "ghost", size: "default" }),
+                  active && "text-white bg-white/[0.06]",
+                )}
+              >
+                {label}
+              </Link>
+            );
+          })}
+        </div>
+
+        {/* Desktop right side */}
+        <div className="hidden items-center gap-2 md:flex">
+          <div className="flex items-center gap-1.5 text-sm text-[#666] mr-1">
+            <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
+            <span>Monad</span>
+          </div>
+          <WalletButton />
+        </div>
+
+        {/* Mobile menu toggle */}
+        <Button
+          size="icon"
+          variant="outline"
+          onClick={() => setOpen(!open)}
+          className="md:hidden"
+        >
+          <MenuToggleIcon open={open} className="size-5" duration={300} />
+        </Button>
+      </nav>
+
+      {/* Mobile menu overlay */}
+      <div
+        className={cn(
+          "bg-[#050505]/95 backdrop-blur-xl fixed top-16 right-0 bottom-0 left-0 z-50 flex flex-col overflow-hidden border-t border-[#1a1a1a] md:hidden",
+          open ? "block" : "hidden",
+        )}
+      >
+        <div
+          data-slot={open ? "open" : "closed"}
+          className={cn(
+            "data-[slot=open]:animate-in data-[slot=open]:zoom-in-95 data-[slot=closed]:animate-out data-[slot=closed]:zoom-out-95 ease-out",
+            "flex h-full w-full flex-col justify-between gap-y-2 p-4",
+          )}
+        >
+          <div className="grid gap-y-1">
+            {links.map(({ href, label }) => {
               const active = pathname === href;
               return (
                 <Link
                   key={href}
                   href={href}
-                  className={`px-3 py-2 rounded-lg text-sm font-medium transition-all ${
-                    active
-                      ? "bg-purple-900/40 text-purple-300 glow-purple"
-                      : "text-gray-400 hover:text-white hover:bg-gray-800/50"
-                  }`}
+                  onClick={() => setOpen(false)}
+                  className={cn(
+                    buttonVariants({
+                      variant: "ghost",
+                      className: "justify-start text-lg",
+                    }),
+                    active && "text-white bg-white/[0.06]",
+                  )}
                 >
-                  <span className="mr-1">{icon}</span>
                   {label}
                 </Link>
               );
             })}
           </div>
-
-          {/* Wallet + Status */}
-          <div className="flex items-center gap-3">
-            <WalletButton />
-            <div className="flex items-center gap-2 text-xs text-gray-500">
-              <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-              <span>Monad Testnet</span>
+          <div className="flex flex-col gap-2 pb-6">
+            <div className="flex items-center justify-center gap-1.5 text-xs text-[#666] mb-2">
+              <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
+              <span>Connected to Monad Testnet</span>
             </div>
+            <WalletButton />
           </div>
         </div>
       </div>
-    </nav>
+    </header>
   );
 }

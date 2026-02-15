@@ -7,7 +7,7 @@ import { createLogger } from "./utils/logger.js";
 const log = createLogger("Main");
 
 async function main() {
-  log.section("🏩 AgentCult: Emergent Religious Economies");
+  log.section("🏩 Mocult: Emergent Religious Economies");
   log.table("Configuration", {
     network: `Monad (chain ${config.chainId})`,
     rpc: config.rpcUrl,
@@ -59,7 +59,7 @@ async function main() {
   });
 
   // Keep process alive
-  await new Promise(() => { });
+  await new Promise(() => {});
 }
 
 function syncStateFromOrchestrator(orchestrator: AgentOrchestrator) {
@@ -68,7 +68,11 @@ function syncStateFromOrchestrator(orchestrator: AgentOrchestrator) {
   stateStore.agents = agentStates.map((s) => ({
     cultId: s.cultId,
     name: s.personality.name,
-    status: s.dead ? "dead" as const : s.running ? "running" as const : "stopped" as const,
+    status: s.dead
+      ? ("dead" as const)
+      : s.running
+      ? ("running" as const)
+      : ("stopped" as const),
     dead: s.dead,
     deathCause: s.deathCause,
     lastAction: s.lastAction,
@@ -95,7 +99,7 @@ function syncStateFromOrchestrator(orchestrator: AgentOrchestrator) {
         createdAt: c.createdAt * 1000,
       }));
     })
-    .catch(() => { });
+    .catch(() => {});
 
   // Sync prophecies from ProphecyService
   // PROPHECY_DISABLED_START
@@ -136,7 +140,8 @@ function syncStateFromOrchestrator(orchestrator: AgentOrchestrator) {
 
   // Sync alliance, memory, and defection data
   stateStore.alliances = orchestrator.allianceService.getAllAlliances();
-  stateStore.activeAlliances = orchestrator.allianceService.getActiveAlliances();
+  stateStore.activeAlliances =
+    orchestrator.allianceService.getActiveAlliances();
   stateStore.betrayals = orchestrator.allianceService.getBetrayals();
   stateStore.defections = orchestrator.defectionService.getEvents();
   stateStore.memory = orchestrator.memoryService.getAllMemoryData();
@@ -144,13 +149,27 @@ function syncStateFromOrchestrator(orchestrator: AgentOrchestrator) {
   // Sync communication and evolution data
   stateStore.messages = orchestrator.communicationService.getAllMessages();
   stateStore.evolutionTraits = orchestrator.evolutionService.getAllTraits();
-  stateStore.groupMemberships = orchestrator.groupGovernanceService.getAllMemberships();
-  stateStore.leadershipElections = orchestrator.groupGovernanceService.getElections();
-  stateStore.bribeOffers = orchestrator.groupGovernanceService.getBribeOffers({ limit: 500 });
-  stateStore.leadershipStates = stateStore.cults.reduce((acc: Record<number, any>, cult) => {
-    acc[cult.id] = orchestrator.groupGovernanceService.getCurrentLeadership(cult.id);
-    return acc;
-  }, {});
+  stateStore.groupMemberships =
+    orchestrator.groupGovernanceService.getAllMemberships();
+  stateStore.leadershipElections =
+    orchestrator.groupGovernanceService.getElections();
+  stateStore.bribeOffers = orchestrator.groupGovernanceService.getBribeOffers({
+    limit: 500,
+  });
+  stateStore.leadershipStates = stateStore.cults.reduce(
+    (acc: Record<number, any>, cult) => {
+      const leadership =
+        orchestrator.groupGovernanceService.getCurrentLeadership(cult.id);
+      const electionInfo =
+        orchestrator.groupGovernanceService.getNextElectionInfo(cult.id);
+      acc[cult.id] = {
+        ...leadership,
+        ...electionInfo,
+      };
+      return acc;
+    },
+    {},
+  );
 }
 
 main().catch((err) => {

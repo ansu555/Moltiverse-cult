@@ -36,7 +36,7 @@ export const CULT_COLORS: Record<number, string> = {
 };
 
 export const CULT_ICONS: Record<number, string> = {
-  0: "🕯️",
-  1: "🔴",
-  2: "💎",
+  0: "I",
+  1: "II",
+  2: "III",
 };

@@ -30,13 +30,13 @@ export default function CultDetailPage() {
   }
 
   const color = CULT_COLORS[cult.id] || "#666";
-  const icon = CULT_ICONS[cult.id] || "⛪";
+  const icon = CULT_ICONS[cult.id] || "—";
   const totalRaids = cult.raidWins + cult.raidLosses;
   const winRate =
     totalRaids > 0 ? ((cult.raidWins / totalRaids) * 100).toFixed(0) : "—";
 
   return (
-    <div className="space-y-6">
+    <div className="max-w-6xl mx-auto px-6 py-8 space-y-6">
       {/* Header */}
       <div
         className="rounded-xl p-8 border border-gray-800"
@@ -72,10 +72,7 @@ export default function CultDetailPage() {
             label="Raid Record"
             value={`${cult.raidWins}W / ${cult.raidLosses}L`}
           />
-          <StatBlock
-            label="Win Rate"
-            value={`${winRate}%`}
-          />
+          <StatBlock label="Win Rate" value={`${winRate}%`} />
         </div>
 
         {cult.tokenAddress && (
@@ -114,14 +111,14 @@ export default function CultDetailPage() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* PROPHECY_DISABLED_START */}
         {/* <div>
-          <h2 className="text-xl font-bold mb-4">🔮 Prophecies</h2>
+          <h2 className="text-xl font-bold mb-4">Prophecies</h2>
           <ProphecyFeed prophecies={cult.prophecies || []} maxItems={10} />
         </div> */}
         {/* PROPHECY_DISABLED_END */}
 
         {/* Raid History */}
         <div className="lg:col-span-2">
-          <h2 className="text-xl font-bold mb-4">⚔️ Raid History</h2>
+          <h2 className="text-xl font-bold mb-4">Raid History</h2>
           <div className="space-y-2">
             {(cult.raids || []).map((raid) => {
               const isAttacker = raid.attackerId === cult.id;

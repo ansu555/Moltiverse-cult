@@ -13,12 +13,14 @@ export class WorldStateService {
   private cacheMs = 5000;
   private lastHydratedAt = 0;
   private activeAgents: AgentRow[] = [];
+  private allAgentsCache: AgentRow[] = []; // Cache all agents including recruits
 
   private async hydrateIfNeeded(force = false): Promise<void> {
     const now = Date.now();
     if (!force && now - this.lastHydratedAt < this.cacheMs) return;
     try {
       const rows = await loadAllAgents();
+      this.allAgentsCache = rows.filter((row) => row.status !== "stopped");
       this.activeAgents = rows.filter(
         (row) => row.status !== "stopped" && row.cult_id !== null && row.cult_id >= 0,
       );
@@ -61,5 +63,23 @@ export class WorldStateService {
       .map((row) => row.cult_id)
       .filter((id): id is number => id !== null && id >= 0);
   }
-}
 
+  /**
+   * Get agents available for recruitment (cult_id = null, not in any cult yet)
+   */
+  async getRecruitableAgents(): Promise<AgentRow[]> {
+    await this.hydrateIfNeeded(true); // Force refresh to get latest recruit status
+    const recruitable = this.allAgentsCache.filter(
+      (row) => row.cult_id === null && row.status !== "stopped",
+    );
+    log.debug(`Found ${recruitable.length} recruitable agents (total cached: ${this.allAgentsCache.length})`);
+    return recruitable;
+  }
+
+  /**
+   * Force refresh the agent cache (e.g., after recruitment)
+   */
+  invalidateCache(): void {
+    this.lastHydratedAt = 0;
+  }
+}

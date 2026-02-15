@@ -2,7 +2,15 @@
   "permissions": {
     "allow": [
       "Bash(npx hardhat compile:*)",
-      "Bash(npx hardhat test:*)"
+      "Bash(npx hardhat test:*)",
+      "Bash(xargs:*)",
+      "Bash(npx tsc:*)",
+      "Bash(curl:*)",
+      "Bash(python3:*)",
+      "Bash(chmod:*)",
+      "Bash(npm run test-recruitment:*)",
+      "Bash(npx tsx:*)",
+      "Bash(tail:*)"
     ]
   }
 }

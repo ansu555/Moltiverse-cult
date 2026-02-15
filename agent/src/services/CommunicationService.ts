@@ -54,8 +54,14 @@ export class CommunicationService {
     private llm: LLMService;
     private memoryService: MemoryService;
     private nextId = 0;
+    private lastPublicMessageAtByCult = new Map<number, number>();
+    private lastPrivateMessageAtByPair = new Map<string, number>();
 
     private static readonly MAX_MESSAGES = 200;
+    private static readonly PUBLIC_MIN_INTERVAL_MS = 120_000;
+    private static readonly PRIVATE_MIN_INTERVAL_MS = 180_000;
+    private static readonly SIMILARITY_THRESHOLD = 0.72;
+    private static readonly SIMILARITY_WINDOW_SIZE = 25;
     private static readonly MESSAGE_PROMPTS: Record<MessageType, string> = {
         propaganda: "Write a short, charismatic propaganda message promoting your cult. Be bold, dramatic, and persuasive. Max 2 sentences.",
         threat: "Write a short, menacing threat directed at a rival cult. Be intimidating but witty. Max 2 sentences.",
@@ -69,6 +75,94 @@ export class CommunicationService {
     constructor(llm: LLMService, memoryService: MemoryService) {
         this.llm = llm;
         this.memoryService = memoryService;
+    }
+
+    private getPairKey(cultIdA: number, cultIdB: number): string {
+        return `${Math.min(cultIdA, cultIdB)}:${Math.max(cultIdA, cultIdB)}`;
+    }
+
+    private normalizeText(value: string): string {
+        return value
+            .toLowerCase()
+            .replace(/[^a-z0-9\s]/g, " ")
+            .replace(/\s+/g, " ")
+            .trim();
+    }
+
+    private tokenize(value: string): Set<string> {
+        const normalized = this.normalizeText(value);
+        if (!normalized) return new Set();
+        return new Set(
+            normalized
+                .split(" ")
+                .map((token) => token.trim())
+                .filter((token) => token.length >= 2),
+        );
+    }
+
+    private jaccardSimilarity(a: Set<string>, b: Set<string>): number {
+        if (a.size === 0 || b.size === 0) return 0;
+        let intersection = 0;
+        for (const token of a) {
+            if (b.has(token)) intersection += 1;
+        }
+        const union = a.size + b.size - intersection;
+        if (union <= 0) return 0;
+        return intersection / union;
+    }
+
+    private isHighSimilarity(
+        fromCultId: number,
+        candidate: string,
+        visibility: "public" | "private" | "leaked",
+        targetCultId?: number,
+    ): boolean {
+        const normalizedCandidate = this.normalizeText(candidate);
+        if (!normalizedCandidate) return true;
+
+        const candidateTokens = this.tokenize(candidate);
+        const recent = this.messages
+            .filter((message) => {
+                if (message.fromCultId !== fromCultId) return false;
+                if (message.visibility !== visibility) return false;
+                if (visibility === "private" && targetCultId !== undefined) {
+                    return message.targetCultId === targetCultId;
+                }
+                return true;
+            })
+            .slice(-CommunicationService.SIMILARITY_WINDOW_SIZE);
+
+        for (const message of recent) {
+            const normalizedExisting = this.normalizeText(message.content);
+            if (!normalizedExisting) continue;
+            if (normalizedExisting === normalizedCandidate) return true;
+            const similarity = this.jaccardSimilarity(
+                candidateTokens,
+                this.tokenize(message.content),
+            );
+            if (similarity > CommunicationService.SIMILARITY_THRESHOLD) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private sanitizeGeneratedText(content: string): string {
+        return content.replace(/^["']|["']$/g, "").trim();
+    }
+
+    hasRecentTargetedDialogue(
+        cultA: number,
+        cultB: number,
+        windowMs = 6 * 60 * 1000,
+    ): boolean {
+        const cutoff = Date.now() - Math.max(1, windowMs);
+        return this.messages.some((message) => {
+            if (message.timestamp < cutoff) return false;
+            const forward = message.fromCultId === cultA && message.targetCultId === cultB;
+            const reverse = message.fromCultId === cultB && message.targetCultId === cultA;
+            return forward || reverse;
+        });
     }
 
     private async appendThreadMessage(input: {
@@ -140,7 +234,16 @@ export class CommunicationService {
         targetCultId?: number,
         targetCultName?: string,
         directive?: string,
-    ): Promise<AgentMessage> {
+    ): Promise<AgentMessage | null> {
+        const now = Date.now();
+        const lastPublicAt = this.lastPublicMessageAtByCult.get(fromCultId) || 0;
+        if (now - lastPublicAt < CommunicationService.PUBLIC_MIN_INTERVAL_MS) {
+            log.info(
+                `Skipped public message from ${fromCultName}: cooldown (${Math.ceil((CommunicationService.PUBLIC_MIN_INTERVAL_MS - (now - lastPublicAt)) / 1000)}s left)`,
+            );
+            return null;
+        }
+
         const promptSuffix = CommunicationService.MESSAGE_PROMPTS[type];
         const contextParts: string[] = [`You are ${fromCultName}.`];
 
@@ -166,8 +269,7 @@ export class CommunicationService {
                 fromCultName,
                 prompt,
             );
-            // Clean up — strip quotes if the LLM wraps them
-            content = content.replace(/^["']|["']$/g, "").trim();
+            content = this.sanitizeGeneratedText(content);
         } catch {
             // Fallback messages if LLM fails
             const fallbacks: Record<MessageType, string> = {
@@ -180,6 +282,26 @@ export class CommunicationService {
                 war_cry: `${fromCultName} marches to war!`,
             };
             content = fallbacks[type];
+        }
+
+        if (this.isHighSimilarity(fromCultId, content, "public", targetCultId)) {
+            const antiRepeatDirective =
+                "Do not repeat previous wording. Use fresh vocabulary and a new framing.";
+            try {
+                const regenerated = await this.llm.generateScripture(
+                    systemPrompt,
+                    fromCultName,
+                    `${prompt} ${antiRepeatDirective}`,
+                );
+                content = this.sanitizeGeneratedText(regenerated);
+            } catch {
+                // keep original if regeneration fails
+            }
+        }
+
+        if (this.isHighSimilarity(fromCultId, content, "public", targetCultId)) {
+            log.info(`Skipped public message from ${fromCultName}: duplicate/similar content`);
+            return null;
         }
 
         const message: AgentMessage = {
@@ -215,6 +337,7 @@ export class CommunicationService {
         if (this.messages.length > CommunicationService.MAX_MESSAGES) {
             this.messages.splice(0, this.messages.length - CommunicationService.MAX_MESSAGES);
         }
+        this.lastPublicMessageAtByCult.set(fromCultId, message.timestamp);
 
         // Broadcast to SSE clients
         broadcastEvent("agent_message", message);
@@ -351,15 +474,43 @@ export class CommunicationService {
         targetCultId: number,
         targetCultName: string,
         context: string,
-    ): Promise<AgentMessage> {
+    ): Promise<AgentMessage | null> {
+        const now = Date.now();
+        const pairKey = this.getPairKey(fromCultId, targetCultId);
+        const lastPrivateAt = this.lastPrivateMessageAtByPair.get(pairKey) || 0;
+        if (now - lastPrivateAt < CommunicationService.PRIVATE_MIN_INTERVAL_MS) {
+            log.info(
+                `Skipped private message ${fromCultName} -> ${targetCultName}: cooldown (${Math.ceil((CommunicationService.PRIVATE_MIN_INTERVAL_MS - (now - lastPrivateAt)) / 1000)}s left)`,
+            );
+            return null;
+        }
+
         const prompt = `You are ${fromCultName}. Send a secret, private message to ${targetCultName}. Context: ${context}. Be cunning and strategic. Max 2 sentences.`;
 
         let content: string;
         try {
             content = await this.llm.generateScripture(systemPrompt, fromCultName, prompt);
-            content = content.replace(/^["']|["']$/g, "").trim();
+            content = this.sanitizeGeneratedText(content);
         } catch {
             content = `[Whisper from ${fromCultName} to ${targetCultName}]: Let us discuss terms privately...`;
+        }
+
+        if (this.isHighSimilarity(fromCultId, content, "private", targetCultId)) {
+            try {
+                const regenerated = await this.llm.generateScripture(
+                    systemPrompt,
+                    fromCultName,
+                    `${prompt} Do not repeat previous phrasing. Use new wording.`,
+                );
+                content = this.sanitizeGeneratedText(regenerated);
+            } catch {
+                // keep first content
+            }
+        }
+
+        if (this.isHighSimilarity(fromCultId, content, "private", targetCultId)) {
+            log.info(`Skipped private message ${fromCultName} -> ${targetCultName}: duplicate/similar content`);
+            return null;
         }
 
         const channelId = `whisper_${Math.min(fromCultId, targetCultId)}_${Math.max(fromCultId, targetCultId)}`;
@@ -416,6 +567,7 @@ export class CommunicationService {
         if (this.messages.length > CommunicationService.MAX_MESSAGES) {
             this.messages.splice(0, this.messages.length - CommunicationService.MAX_MESSAGES);
         }
+        this.lastPrivateMessageAtByPair.set(pairKey, message.timestamp);
 
         // Private messages are NOT broadcast via SSE — only stored
         log.info(`🤫 [whisper] ${fromCultName} → ${targetCultName}: ${content.slice(0, 60)}...`);
@@ -446,7 +598,7 @@ export class CommunicationService {
                 targetCultIds[i],
                 targetCultNames[i],
             );
-            results.push(msg);
+            if (msg) results.push(msg);
         }
 
         log.info(`📣 [blitz] ${fromCultName} launched propaganda blitz against ${targetCultIds.length} cults`);
@@ -751,8 +903,10 @@ export class CommunicationService {
         toCultId: number | null,
         tokenAddress: string,
         amount: string,
-        purpose: "bribe" | "goodwill" | "tribute" | "gift",
+        purpose: "bribe" | "goodwill" | "tribute" | "gift" | "bribe_failed",
         txHash?: string,
+        status: "success" | "failed" = "success",
+        failureReason?: string,
     ): Promise<void> {
         // Persist to InsForge
         saveTokenTransfer({
@@ -774,6 +928,8 @@ export class CommunicationService {
             amount,
             purpose,
             txHash,
+            status,
+            failureReason: failureReason || null,
         });
 
         if (fromAgentDbId > 0 && toAgentDbId > 0 && fromCultId !== null) {
@@ -790,12 +946,19 @@ export class CommunicationService {
                 toCultId: toCultId ?? null,
                 messageType: "token_transfer",
                 intent: purpose,
-                content: `${fromCultName} sent ${amount} token units to ${toCultName} (${purpose})`,
+                content:
+                    status === "failed"
+                        ? `${fromCultName} failed to send ${amount} token units to ${toCultName} (${purpose}${failureReason ? `: ${failureReason}` : ""})`
+                        : `${fromCultName} sent ${amount} token units to ${toCultName} (${purpose})`,
                 timestamp: Date.now(),
             });
         }
 
-        log.info(`💰 [${purpose}] ${fromCultName} → ${toCultName}: ${amount} tokens`);
+        if (status === "failed") {
+            log.warn(`💸 [${purpose}] ${fromCultName} → ${toCultName}: FAILED ${amount} tokens (${failureReason || "unknown_reason"})`);
+        } else {
+            log.info(`💰 [${purpose}] ${fromCultName} → ${toCultName}: ${amount} tokens`);
+        }
     }
 
     /**

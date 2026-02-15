@@ -38,10 +38,7 @@ export function RaidArena({ raids, cults }: Props) {
     <div className="space-y-6">
       {/* Arena Header */}
       <div className="text-center">
-        <h2 className="text-3xl font-bold mb-2">
-          <span className="text-red-500">⚔️</span> Raid Arena{" "}
-          <span className="text-red-500">⚔️</span>
-        </h2>
+        <h2 className="text-3xl font-bold mb-2">Raid Arena</h2>
         <p className="text-gray-500 text-sm">
           Cults wage war for treasury dominance. The weak are sacrificed.
         </p>
@@ -59,7 +56,7 @@ export function RaidArena({ raids, cults }: Props) {
         >
           {/* Battle Label */}
           <div className="absolute -top-4 left-1/2 -translate-x-1/2 px-4 py-1 bg-red-900/80 rounded-full text-xs font-mono text-red-300 border border-red-700">
-            {animating ? "⚡ BATTLE IN PROGRESS" : "LAST RAID RESULT"}
+            {animating ? "BATTLE IN PROGRESS" : "LAST RAID RESULT"}
           </div>
 
           <div className="grid grid-cols-3 items-center gap-4">
@@ -70,7 +67,7 @@ export function RaidArena({ raids, cults }: Props) {
                   animating ? "animate-float scale-110" : ""
                 }`}
               >
-                {CULT_ICONS[activeRaid.attackerId] || "⛪"}
+                {CULT_ICONS[activeRaid.attackerId] || "—"}
               </div>
               <div
                 className="font-bold text-lg"
@@ -81,7 +78,7 @@ export function RaidArena({ raids, cults }: Props) {
               <div className="text-xs text-gray-500 mt-1">ATTACKER</div>
               {activeRaid.attackerWon && (
                 <div className="mt-2 text-yellow-400 text-xs font-bold animate-pulse">
-                  👑 VICTOR
+                  VICTOR
                 </div>
               )}
             </div>
@@ -126,7 +123,7 @@ export function RaidArena({ raids, cults }: Props) {
                 }`}
                 style={{ animationDelay: "0.5s" }}
               >
-                {CULT_ICONS[activeRaid.defenderId] || "⛪"}
+                {CULT_ICONS[activeRaid.defenderId] || "—"}
               </div>
               <div
                 className="font-bold text-lg"
@@ -137,7 +134,7 @@ export function RaidArena({ raids, cults }: Props) {
               <div className="text-xs text-gray-500 mt-1">DEFENDER</div>
               {!activeRaid.attackerWon && (
                 <div className="mt-2 text-yellow-400 text-xs font-bold animate-pulse">
-                  👑 VICTOR
+                  VICTOR
                 </div>
               )}
             </div>
@@ -154,7 +151,9 @@ export function RaidArena({ raids, cults }: Props) {
         </div>
       ) : (
         <div className="rounded-2xl border border-gray-800 p-12 text-center bg-[#0d0d0d]">
-          <div className="text-5xl mb-4 animate-pulse-slow">⚔️</div>
+          <div className="text-xl text-gray-600 mb-4 animate-pulse-slow font-bold">
+            —
+          </div>
           <p className="text-gray-500 font-mono">
             No raids yet. The cults are gathering strength...
           </p>
@@ -178,7 +177,7 @@ export function RaidArena({ raids, cults }: Props) {
               }}
             >
               <div className="flex items-center gap-3">
-                <span>{CULT_ICONS[raid.attackerId] || "⛪"}</span>
+                <span>{CULT_ICONS[raid.attackerId] || "—"}</span>
                 <span
                   className="font-semibold text-sm"
                   style={{
@@ -200,7 +199,7 @@ export function RaidArena({ raids, cults }: Props) {
                 >
                   {raid.defenderName}
                 </span>
-                <span>{CULT_ICONS[raid.defenderId] || "⛪"}</span>
+                <span>{CULT_ICONS[raid.defenderId] || "—"}</span>
               </div>
               <div className="flex items-center gap-3 text-xs">
                 <span className="font-mono text-green-400">

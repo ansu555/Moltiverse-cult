@@ -34,7 +34,7 @@ export function AgentDeployForm() {
   return (
     <div className="border border-gray-800 rounded-xl p-6 bg-[#0d0d0d]">
       <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
-        <span>🤖</span> Deploy New Cult Agent
+        Deploy New Cult Agent
       </h3>
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>
@@ -64,7 +64,7 @@ export function AgentDeployForm() {
           disabled={status === "loading" || !name || !prompt}
           className="w-full bg-purple-700 hover:bg-purple-600 disabled:bg-gray-700 disabled:text-gray-500 text-white font-semibold py-2.5 rounded-lg transition-colors text-sm"
         >
-          {status === "loading" ? "Deploying..." : "⛪ Deploy Agent"}
+          {status === "loading" ? "Deploying..." : "Deploy Agent"}
         </button>
       </form>
       {status !== "idle" && (
