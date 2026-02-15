@@ -144,6 +144,27 @@ export class GroupGovernanceService {
     );
   }
 
+  getNextElectionInfo(cultId: number): {
+    nextElectionCycle: number | null;
+    currentCycle: number;
+    etaCycles: number | null;
+  } {
+    const next = this.nextElectionCycleByCult.get(cultId);
+    const current = this.lastProcessedCycleByCult.get(cultId) || 0;
+    if (next === undefined) {
+      return {
+        nextElectionCycle: null,
+        currentCycle: current,
+        etaCycles: null,
+      };
+    }
+    return {
+      nextElectionCycle: next,
+      currentCycle: current,
+      etaCycles: Math.max(0, next - current),
+    };
+  }
+
   getElections(cultId?: number): LeadershipElection[] {
     const rows =
       cultId === undefined
@@ -255,16 +276,16 @@ export class GroupGovernanceService {
         cultId: input.targetCultId,
         agentId: input.toAgentId,
       }) *
-        0.2 -
-      0.1;
+        0.12 -
+      0.06;
     const acceptanceProbability = this.clamp(
-      0.05 +
-        0.5 * normalizedAmount +
-        0.2 * (1 - input.diplomacy) +
-        0.2 * input.trustToBriber -
-        0.25 * input.loyalty +
+      0.18 +
+        0.42 * normalizedAmount +
+        0.18 * input.diplomacy +
+        0.17 * input.trustToBriber -
+        0.12 * input.loyalty +
         noise,
-      0,
+      0.05,
       0.95,
     );
 
@@ -408,7 +429,7 @@ export class GroupGovernanceService {
     if (members.length === 0) return;
 
     if (!this.nextElectionCycleByCult.has(input.cultId)) {
-      const offset = this.randomness.int(8, 20, {
+      const offset = this.randomness.int(24, 48, {
         domain: "election_interval_initial",
         cycle: input.cycle,
         cultId: input.cultId,
@@ -442,7 +463,7 @@ export class GroupGovernanceService {
     cycle: number;
   }): Promise<LeadershipElection> {
     const opensAt = input.cycle;
-    const closesAt = input.cycle + 3;
+    const closesAt = input.cycle + 4;
     const seed = `${this.randomness.seed}:${input.cultId}:${input.roundIndex}`;
     const electionPayload: Omit<LeadershipElectionRow, "id"> = {
       cult_id: input.cultId,
@@ -620,7 +641,7 @@ export class GroupGovernanceService {
   }
 
   private scheduleNextElection(cultId: number, cycle: number): void {
-    const interval = this.randomness.int(8, 20, {
+    const interval = this.randomness.int(24, 48, {
       domain: "election_interval_next",
       cycle,
       cultId,
@@ -756,4 +777,3 @@ export class GroupGovernanceService {
     return Math.max(min, Math.min(max, value));
   }
 }
-

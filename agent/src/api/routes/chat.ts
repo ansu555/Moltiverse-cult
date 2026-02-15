@@ -32,6 +32,16 @@ export function chatRoutes(orchestrator: AgentOrchestrator): Router {
     return Number.isFinite(n) && n > 0 ? n : undefined;
   };
 
+  const parseVisibility = (
+    raw: unknown,
+  ): "all" | "public" | "private" | "leaked" => {
+    const value = String(raw || "all").toLowerCase();
+    if (value === "public" || value === "private" || value === "leaked") {
+      return value;
+    }
+    return "all";
+  };
+
   // GET /api/chat — fetch recent messages (paginated)
   router.get("/", async (req: Request, res: Response) => {
     try {
@@ -77,10 +87,12 @@ export function chatRoutes(orchestrator: AgentOrchestrator): Router {
       const agentId =
         agentIdRaw !== undefined ? Number.parseInt(String(agentIdRaw), 10) : undefined;
       const kind = req.query.kind ? String(req.query.kind) : undefined;
+      const visibility = parseVisibility(req.query.visibility);
       const rows = await loadConversationThreads({
         limit,
         agentId: Number.isFinite(agentId as number) ? agentId : undefined,
         kind,
+        visibility,
       });
       res.json(rows);
     } catch (error: any) {

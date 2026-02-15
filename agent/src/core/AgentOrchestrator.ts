@@ -25,7 +25,7 @@ import {
   loadAllAgents, createAgent, updateAgentState, loadAgentMessages,
   loadRaids, loadProphecies, loadAllAlliances, loadBetrayals,
   loadDefections, loadMemes, loadTokenTransfers, loadSpoilsVotes,
-  AgentRow, CreateAgentInput,
+  AgentRow, CreateAgentInput, updateAgentIdentity,
 } from "../services/InsForgeService.js";
 
 const log = createLogger("Orchestrator");
@@ -386,6 +386,69 @@ export class AgentOrchestrator {
 
   getAllAgentRows(): AgentRow[] {
     return Array.from(this.agentRows.values());
+  }
+
+  async applyPersonalitiesFromCanonical(): Promise<{
+    applied: number;
+    skipped: number;
+    totalAgents: number;
+    totalPersonalities: number;
+    updates: Array<{ agentId: number; name: string; cultId: number | null }>;
+  }> {
+    const personalities = loadPersonalities(true);
+    const rows = this.getAllAgentRows().sort((a, b) => a.id - b.id);
+    const updates: Array<{ agentId: number; name: string; cultId: number | null }> = [];
+    if (personalities.length === 0) {
+      throw new Error("No personalities available to apply");
+    }
+
+    const byName = new Map(
+      personalities.map((personality) => [personality.name.trim().toLowerCase(), personality]),
+    );
+
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i];
+      const matched = byName.get(row.name.trim().toLowerCase());
+      const personality = matched || personalities[i % personalities.length];
+
+      await updateAgentIdentity(row.id, {
+        name: personality.name,
+        symbol: personality.symbol,
+        style: personality.style,
+        system_prompt: personality.systemPrompt,
+        description: personality.description,
+      });
+
+      const updatedRow: AgentRow = {
+        ...row,
+        name: personality.name,
+        symbol: personality.symbol,
+        style: personality.style,
+        system_prompt: personality.systemPrompt,
+        description: personality.description,
+      };
+      this.agentRows.set(row.id, updatedRow);
+
+      const liveAgent = this.agentsByDbId.get(row.id);
+      if (liveAgent) {
+        liveAgent.personality = { ...personality };
+        liveAgent.state.personality = { ...personality };
+      }
+
+      updates.push({
+        agentId: row.id,
+        name: personality.name,
+        cultId: row.cult_id,
+      });
+    }
+
+    return {
+      applied: rows.length,
+      skipped: Math.max(personalities.length - rows.length, 0),
+      totalAgents: rows.length,
+      totalPersonalities: personalities.length,
+      updates,
+    };
   }
 
   async getCultsFromChain() {

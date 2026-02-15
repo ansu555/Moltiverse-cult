@@ -35,6 +35,7 @@ contract CultRegistry {
     mapping(uint256 => Prophecy) public prophecies;
     mapping(uint256 => address[]) public cultFollowers;
     mapping(address => uint256) public followerToCult;
+    mapping(address => bool) public hasFollowerCult;
 
     event CultRegistered(
         uint256 indexed cultId,
@@ -46,6 +47,7 @@ contract CultRegistry {
     event TreasuryUpdated(uint256 indexed cultId, uint256 newBalance);
     event FollowerJoined(uint256 indexed cultId, address indexed follower);
     event FollowerLeft(uint256 indexed cultId, address indexed follower);
+    event FollowersRecruited(uint256 indexed cultId, uint256 count, address indexed recorder);
     event RaidResult(
         uint256 indexed attackerId,
         uint256 indexed defenderId,
@@ -122,19 +124,38 @@ contract CultRegistry {
 
     function joinCult(uint256 cultId) external {
         require(cults[cultId].active, "Cult not active");
-        // Leave previous cult if any
+
+        bool hadCult = hasFollowerCult[msg.sender];
         uint256 prevCult = followerToCult[msg.sender];
-        if (prevCult != 0 || cultFollowers[0].length > 0) {
-            // Simple check - just update counts
-            if (cults[prevCult].followerCount > 0 && prevCult != cultId) {
-                cults[prevCult].followerCount--;
-                emit FollowerLeft(prevCult, msg.sender);
-            }
+
+        // Idempotent same-cult join: no follower inflation.
+        if (hadCult && prevCult == cultId) {
+            return;
         }
+
+        // Leave previous cult if switching.
+        if (hadCult && prevCult != cultId) {
+            if (cults[prevCult].followerCount > 0) {
+                cults[prevCult].followerCount--;
+            }
+            emit FollowerLeft(prevCult, msg.sender);
+        }
+
         cults[cultId].followerCount++;
         followerToCult[msg.sender] = cultId;
+        hasFollowerCult[msg.sender] = true;
         cultFollowers[cultId].push(msg.sender);
         emit FollowerJoined(cultId, msg.sender);
+    }
+
+    function recordRecruitment(
+        uint256 cultId,
+        uint256 count
+    ) external onlyLeaderOrOwner(cultId) {
+        require(cults[cultId].active, "Cult not active");
+        require(count > 0, "count must be > 0");
+        cults[cultId].followerCount += count;
+        emit FollowersRecruited(cultId, count, msg.sender);
     }
 
     function recordRaid(

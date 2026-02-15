@@ -67,6 +67,7 @@ export const CULT_REGISTRY_ABI = [
   "function registerCult(string name, string prophecyPrompt, address tokenAddress) payable returns (uint256)",
   "function depositToTreasury(uint256 cultId) payable",
   "function joinCult(uint256 cultId)",
+  "function recordRecruitment(uint256 cultId, uint256 count)",
   "function recordRaid(uint256 attackerId, uint256 defenderId, bool attackerWon, uint256 amount)",
   "function createProphecy(uint256 cultId, bytes32 predictionHash, uint256 targetTimestamp) returns (uint256)",
   "function resolveProphecy(uint256 prophecyId, bool correct, uint256 treasuryMultiplier)",

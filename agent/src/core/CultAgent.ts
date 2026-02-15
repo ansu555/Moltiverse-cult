@@ -43,6 +43,7 @@ export interface AgentState {
 }
 
 export class CultAgent {
+  private static readonly SOCIAL_GATE_WINDOW_MS = 6 * 60 * 1000;
   private contractService: ContractService;
   private txQueue: TransactionQueue;
   private llm: LLMService;
@@ -342,28 +343,40 @@ export class CultAgent {
       cultState,
       rivals,
       executeTalkPublic: async (message: string) => {
-        await this.communicationService.broadcast(
+        const emitted = await this.communicationService.broadcast(
           "propaganda", this.cultId, cultState.name, this.personality.systemPrompt,
           undefined, undefined, message,
         );
+        if (!emitted) {
+          this.state.lastAction = "talk_public skipped: cooldown/similarity guard";
+          return false;
+        }
+        return true;
       },
       executeTalkPrivate: async (targetCultId: number, message: string) => {
         const targetCult = rivals.find((r) => r.id === targetCultId);
         if (targetCult) {
-          await this.communicationService.whisper(
+          const emitted = await this.communicationService.whisper(
             this.cultId, cultState.name, this.personality.systemPrompt,
             targetCultId, targetCult.name, message,
           );
+          if (!emitted) {
+            this.state.lastAction = `talk_private skipped with ${targetCult.name}: cooldown/similarity guard`;
+            return false;
+          }
+          return true;
         }
+        this.state.lastAction = `talk_private skipped: target ${targetCultId} unavailable`;
+        return false;
       },
       executeAlly: async (targetCultId: number) => {
-        await this.executeAlliance(cultState, rivals, { target: targetCultId });
+        return this.executeAlliance(cultState, rivals, { target: targetCultId });
       },
       executeBetray: async (reason: string) => {
         await this.executeBetray(cultState, { reason });
       },
       executeBribe: async (targetCultId: number, amount: string) => {
-        await this.executeBribe(cultState, rivals, { target: targetCultId, bribeAmount: amount });
+        return this.executeBribe(cultState, rivals, { target: targetCultId, bribeAmount: amount });
       },
       executeRaid: async (targetCultId: number, wagerPct?: number) => {
         await this.executeRaid(cultState, rivals, { target: targetCultId, wager: wagerPct || 20 });
@@ -718,7 +731,7 @@ export class CultAgent {
     cultState: CultData,
     rivals: CultData[],
     decision: any,
-  ): Promise<void> {
+  ): Promise<boolean> {
     try {
       // Find target (LLM may have specified one)
       let target: CultData | undefined;
@@ -736,7 +749,24 @@ export class CultAgent {
       if (!target) {
         this.log.info("No valid alliance target found");
         this.state.lastAction = "ally: no valid target";
-        return;
+        return false;
+      }
+
+      if (!this.communicationService.hasRecentTargetedDialogue(
+        this.cultId,
+        target.id,
+        CultAgent.SOCIAL_GATE_WINDOW_MS,
+      )) {
+        await this.communicationService.whisper(
+          this.cultId,
+          cultState.name,
+          this.personality.systemPrompt,
+          target.id,
+          target.name,
+          "Before any alliance pact, we should negotiate terms privately first.",
+        );
+        this.state.lastAction = `ally skipped: no recent dialogue with ${target.name}; opener sent`;
+        return false;
       }
 
       const alliance = this.allianceService.formAlliance(
@@ -749,12 +779,15 @@ export class CultAgent {
       if (alliance) {
         this.state.lastAction = `allied with ${target.name} (bonus: ${((alliance.powerBonus - 1) * 100).toFixed(0)}%)`;
         this.log.info(`Alliance formed with ${target.name}`);
+        return true;
       } else {
         this.state.lastAction = `ally: failed to form alliance with ${target.name}`;
+        return false;
       }
     } catch (error: any) {
       this.log.warn(`Alliance action failed: ${error.message}`);
       this.state.lastAction = "ally: failed - " + error.message;
+      return false;
     }
   }
 
@@ -942,11 +975,17 @@ export class CultAgent {
     }
   }
 
+  private normalizeBribeAmount(rawAmount: unknown): number {
+    const parsed = Number(rawAmount);
+    if (!Number.isFinite(parsed)) return 1.0;
+    return Math.max(0.1, Math.min(10, parsed));
+  }
+
   private async executeBribe(
     cultState: CultData,
     rivals: CultData[],
     decision: any,
-  ): Promise<void> {
+  ): Promise<boolean> {
     try {
       let target: CultData | undefined;
       if (decision.target != null) {
@@ -964,18 +1003,61 @@ export class CultAgent {
       }
       if (!target) {
         this.state.lastAction = "bribe: no targets available";
-        return;
+        return false;
       }
 
       const resolvedTarget = await this.worldStateService.resolveTargetByCultId(target.id);
       if (!resolvedTarget) {
         this.state.lastAction = `bribe: target ${target.id} not DB-backed`;
-        return;
+        return false;
       }
 
-      const amount = decision.bribeAmount || "0.001";
+      if (!this.communicationService.hasRecentTargetedDialogue(
+        this.cultId,
+        target.id,
+        CultAgent.SOCIAL_GATE_WINDOW_MS,
+      )) {
+        await this.communicationService.whisper(
+          this.cultId,
+          cultState.name,
+          this.personality.systemPrompt,
+          target.id,
+          target.name,
+          "Before any token offer, we should discuss intent and terms privately.",
+        );
+        this.state.lastAction = `bribe skipped: no recent dialogue with ${target.name}; opener sent`;
+        return false;
+      }
 
-      // Record the intent (actual on-chain transfer would be done by ContractService)
+      const amountCult = this.normalizeBribeAmount(decision.bribeAmount);
+      const amount = amountCult.toFixed(3);
+      let txHash: string;
+      try {
+        txHash = await this.contractService.transferCultToken(
+          resolvedTarget.walletAddress,
+          amountCult,
+        );
+      } catch (transferError: any) {
+        const reason = transferError?.message || "transfer_failed";
+        await this.communicationService.recordTokenTransfer(
+          this.agentDbId,
+          resolvedTarget.agentId,
+          cultState.name,
+          target.name,
+          this.cultId,
+          target.id,
+          config.cultTokenAddress || ethers.ZeroAddress,
+          amount,
+          "bribe_failed",
+          undefined,
+          "failed",
+          reason,
+        );
+        this.state.lastAction = `bribe failed: transfer to ${target.name} failed (${reason})`;
+        this.log.warn(`Bribe transfer failed to ${target.name}: ${reason}`);
+        return false;
+      }
+
       await this.communicationService.recordTokenTransfer(
         this.agentDbId,
         resolvedTarget.agentId,
@@ -986,6 +1068,7 @@ export class CultAgent {
         config.cultTokenAddress || ethers.ZeroAddress,
         amount,
         "bribe",
+        txHash,
       );
 
       const traits = this.evolutionService.getTraits(this.cultId);
@@ -1017,16 +1100,18 @@ export class CultAgent {
         type: "alliance_formed",
         rivalCultId: target.id,
         rivalCultName: target.name,
-        description: `Sent ${amount} tokens as bribe to ${target.name} (offer #${offer.id}, ${offer.status})`,
+        description: `Sent ${amount} CULT to ${target.name} (offer #${offer.id}, ${offer.status}, tx ${txHash.slice(0, 10)}...)`,
         timestamp: Date.now(),
         outcome: 0.3,
       });
 
-      this.state.lastAction = `bribed ${target.name} with ${amount} tokens (${offer.status})`;
-      this.log.info(`💰 Bribe sent to ${target.name}: ${amount} (${offer.status})`);
+      this.state.lastAction = `bribed ${target.name} with ${amount} CULT (${offer.status})`;
+      this.log.info(`💰 Bribe sent to ${target.name}: ${amount} CULT (${offer.status}, tx=${txHash})`);
+      return true;
     } catch (error: any) {
       this.log.warn(`Bribe action failed: ${error.message}`);
       this.state.lastAction = "bribe: failed - " + error.message;
+      return false;
     }
   }
 
@@ -1188,55 +1273,13 @@ export class CultAgent {
       throw new Error(`Cult data not found for source ${this.cultId} or target ${targetCultId}`);
     }
 
-    const bribeAmount = (amount || 0.001).toString();
-    const resolvedTarget = await this.worldStateService.resolveTargetByCultId(
-      targetCultId,
-    );
-    if (!resolvedTarget) {
-      throw new Error(`Target cult ${targetCultId} is not DB-backed`);
+    const executed = await this.executeBribe(cultState, [target], {
+      target: targetCultId,
+      bribeAmount: this.normalizeBribeAmount(amount),
+    });
+    if (!executed) {
+      throw new Error(this.state.lastAction || `Bribe to ${target.name} was skipped`);
     }
-
-    await this.communicationService.recordTokenTransfer(
-      this.agentDbId,
-      resolvedTarget.agentId,
-      cultState.name,
-      target.name,
-      this.cultId,
-      target.id,
-      config.cultTokenAddress || ethers.ZeroAddress,
-      bribeAmount,
-      "bribe",
-    );
-
-    const traits = this.evolutionService.getTraits(this.cultId);
-    const diplomacy = traits ? Math.max(0, Math.min(1, (traits.diplomacy + 1) / 2)) : 0.5;
-    const trustToBriber = Math.max(
-      0,
-      Math.min(1, (this.memoryService.getTrust(target.id, this.cultId) + 1) / 2),
-    );
-    const loyalty = 0.5;
-    const offer = await this.groupGovernanceService.proposeBribe({
-      fromAgentId: this.agentDbId,
-      toAgentId: resolvedTarget.agentId,
-      targetCultId: this.cultId,
-      purpose: "api_bribe_transfer",
-      amount: bribeAmount,
-      cycle: this.state.cycleCount,
-      diplomacy,
-      trustToBriber,
-      loyalty,
-      expiresInCycles: 12,
-    });
-
-    this.memoryService.recordInteraction(this.cultId, {
-      type: "alliance_formed",
-      rivalCultId: target.id,
-      rivalCultName: target.name,
-      description: `Sent ${bribeAmount} tokens as bribe to ${target.name} (API, offer #${offer.id}, ${offer.status})`,
-      timestamp: Date.now(),
-      outcome: 0.3,
-    });
-
-    this.state.lastAction = `bribed ${target.name} with ${bribeAmount} tokens (API, ${offer.status})`;
+    this.state.lastAction = `${this.state.lastAction} (API)`;
   }
 }

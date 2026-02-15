@@ -208,6 +208,23 @@ export function agentCreationRoutes(orchestrator: AgentOrchestrator): Router {
     }
   });
 
+  // POST /api/agents/management/apply-personalities
+  // Reload canonical personality.json and apply to DB rows + live agent instances.
+  router.post("/apply-personalities", async (_req: Request, res: Response) => {
+    try {
+      const result = await orchestrator.applyPersonalitiesFromCanonical();
+      res.json({
+        success: true,
+        ...result,
+      });
+    } catch (error: any) {
+      res.status(500).json({
+        success: false,
+        error: error?.message || "Failed to apply personalities",
+      });
+    }
+  });
+
   // GET /api/agents/:id/wallet — Get agent wallet info (address only, not private key)
   router.get("/:id/wallet", (req: Request, res: Response) => {
     try {

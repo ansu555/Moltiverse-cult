@@ -88,7 +88,12 @@ export default function ChatPage() {
         const rows = await api.getChatThreads({ limit: 50 });
         if (cancelled) return;
         setThreads(rows);
-        if (rows.length > 0 && selectedThreadId === null) {
+        if (rows.length === 0) {
+          setSelectedThreadId(null);
+        } else if (
+          selectedThreadId === null ||
+          !rows.some((thread) => thread.id === selectedThreadId)
+        ) {
           setSelectedThreadId(rows[0].id);
         }
       } catch {
@@ -230,6 +235,43 @@ export default function ChatPage() {
 
   // Group messages by date
   let lastDate = "";
+  const publicThreads = threads.filter((thread) => thread.visibility === "public");
+  const privateThreads = threads.filter((thread) => thread.visibility === "private");
+  const leakedThreads = threads.filter((thread) => thread.visibility === "leaked");
+
+  const renderThreadSection = (
+    title: string,
+    rows: ConversationThread[],
+    emptyLabel: string,
+  ) => (
+    <div>
+      <div className="text-[11px] font-semibold uppercase tracking-wide text-gray-400 mb-1.5">
+        {title}
+      </div>
+      {rows.length === 0 ? (
+        <p className="text-[11px] text-gray-600">{emptyLabel}</p>
+      ) : (
+        <div className="space-y-1">
+          {rows.map((thread) => (
+            <button
+              key={thread.id}
+              onClick={() => setSelectedThreadId(thread.id)}
+              className={`w-full text-left px-2 py-1.5 rounded text-xs border ${
+                selectedThreadId === thread.id
+                  ? "border-purple-500 bg-purple-900/20 text-purple-200"
+                  : "border-gray-800 text-gray-300 hover:bg-gray-900"
+              }`}
+            >
+              <div className="font-medium">{thread.topic}</div>
+              <div className="text-[10px] text-gray-500">
+                {thread.kind} • {thread.visibility}
+              </div>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 
   const loadOlder = async () => {
     if (!hasMore || loadingHistory) return;
@@ -280,23 +322,10 @@ export default function ChatPage() {
           {threads.length === 0 ? (
             <p className="text-xs text-gray-500">No threads yet.</p>
           ) : (
-            <div className="space-y-1">
-              {threads.map((thread) => (
-                <button
-                  key={thread.id}
-                  onClick={() => setSelectedThreadId(thread.id)}
-                  className={`w-full text-left px-2 py-1.5 rounded text-xs border ${
-                    selectedThreadId === thread.id
-                      ? "border-purple-500 bg-purple-900/20 text-purple-200"
-                      : "border-gray-800 text-gray-300 hover:bg-gray-900"
-                  }`}
-                >
-                  <div className="font-medium">{thread.topic}</div>
-                  <div className="text-[10px] text-gray-500">
-                    {thread.kind} • {thread.visibility}
-                  </div>
-                </button>
-              ))}
+            <div className="space-y-3">
+              {renderThreadSection("Public", publicThreads, "No public threads")}
+              {renderThreadSection("Private", privateThreads, "No private threads")}
+              {renderThreadSection("Leaked", leakedThreads, "No leaked threads")}
             </div>
           )}
         </div>

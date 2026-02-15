@@ -46,6 +46,30 @@ describe("CultRegistry", function () {
       const cult = await registry.getCult(0);
       expect(cult.followerCount).to.equal(1);
     });
+
+    it("should be idempotent when the same follower joins the same cult twice", async function () {
+      await registry.connect(agent1).registerCult("Test Cult", "prompt", ethers.ZeroAddress);
+      await registry.connect(follower1).joinCult(0);
+      await registry.connect(follower1).joinCult(0);
+      const cult = await registry.getCult(0);
+      expect(cult.followerCount).to.equal(1);
+    });
+  });
+
+  describe("recordRecruitment", function () {
+    it("should increase follower count by exactly the requested amount", async function () {
+      await registry.connect(agent1).registerCult("Recruiters", "prompt", ethers.ZeroAddress);
+      await registry.connect(agent1).recordRecruitment(0, 7);
+      const cult = await registry.getCult(0);
+      expect(cult.followerCount).to.equal(7);
+    });
+
+    it("should reject callers that are not cult leader or owner", async function () {
+      await registry.connect(agent1).registerCult("Recruiters", "prompt", ethers.ZeroAddress);
+      await expect(
+        registry.connect(follower1).recordRecruitment(0, 3),
+      ).to.be.revertedWith("Not leader or owner");
+    });
   });
 
   describe("recordRaid", function () {

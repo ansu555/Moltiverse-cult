@@ -85,12 +85,10 @@ export class PersuasionService {
     // Record follower joins on-chain
     let recordedOnChain = false;
     try {
-      for (let i = 0; i < followersConverted; i++) {
-        await this.contractService.joinCult(cultId);
-      }
+      await this.contractService.recordRecruitment(cultId, followersConverted);
       recordedOnChain = true;
       log.info(
-        `Recorded ${followersConverted} follower joins on-chain for cult ${cultId}`,
+        `Recorded ${followersConverted} recruited followers on-chain for cult ${cultId}`,
       );
     } catch (error: any) {
       log.warn(`Failed to record followers on-chain: ${error.message}`);

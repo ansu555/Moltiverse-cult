@@ -1,5 +1,5 @@
 import { ethers } from "ethers";
-import { config, CULT_REGISTRY_ABI } from "../config.js";
+import { config, CULT_REGISTRY_ABI, CULT_TOKEN_ABI } from "../config.js";
 import { createLogger } from "../utils/logger.js";
 
 const log = createLogger("ContractService");
@@ -218,6 +218,14 @@ export class ContractService {
     log.info(`Follower recorded on-chain for cult ${cultId}`);
   }
 
+  async recordRecruitment(cultId: number, count: number): Promise<void> {
+    if (!Number.isFinite(count) || count <= 0) return;
+    log.info(`Recording recruitment for cult ${cultId}: +${count} followers`);
+    const tx = await this.registry.recordRecruitment(cultId, count);
+    await tx.wait();
+    log.info(`Recruitment recorded on-chain for cult ${cultId}`);
+  }
+
   async getCult(cultId: number): Promise<CultData> {
     const raw = await this.registry.getCult(cultId);
     return parseCult(raw);
@@ -262,5 +270,38 @@ export class ContractService {
       // recordDefection may not exist on older deployments
       log.warn(`recordDefection not available on-chain: ${err.message}`);
     }
+  }
+
+  async transferCultToken(toWallet: string, amountCult: number): Promise<string> {
+    if (!config.cultTokenAddress) {
+      throw new Error("CULT_TOKEN_ADDRESS is not configured");
+    }
+    if (!ethers.isAddress(toWallet)) {
+      throw new Error(`Invalid recipient wallet: ${toWallet}`);
+    }
+    if (!Number.isFinite(amountCult) || amountCult <= 0) {
+      throw new Error(`Invalid CULT amount: ${amountCult}`);
+    }
+
+    const token = new ethers.Contract(
+      config.cultTokenAddress,
+      CULT_TOKEN_ABI,
+      this.wallet,
+    );
+    const decimals = Number(await token.decimals().catch(() => 18));
+    const amountWei = ethers.parseUnits(amountCult.toString(), decimals);
+    const balance = await token.balanceOf(this.wallet.address);
+    if (balance < amountWei) {
+      throw new Error(
+        `Insufficient CULT balance: have ${ethers.formatUnits(balance, decimals)}, need ${amountCult}`,
+      );
+    }
+
+    const tx = await token.transfer(toWallet, amountWei);
+    const receipt = await tx.wait();
+    if (!receipt?.hash) {
+      throw new Error("CULT transfer did not return a transaction hash");
+    }
+    return receipt.hash;
   }
 }

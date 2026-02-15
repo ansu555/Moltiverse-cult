@@ -90,6 +90,8 @@ export interface AgentInfo {
   totalFollowersRecruited: number;
 }
 
+export type DataScope = "managed" | "all";
+
 // Global state store
 export const stateStore: StateStore = {
   cults: [],
@@ -111,6 +113,25 @@ export const stateStore: StateStore = {
   bribeOffers: [],
   sseClients: [],
 };
+
+export function parseDataScope(raw: unknown): DataScope {
+  return String(raw || "managed").toLowerCase() === "all" ? "all" : "managed";
+}
+
+export function getManagedCultIds(): Set<number> {
+  return new Set(
+    stateStore.agents
+      .filter((agent) => agent.status !== "stopped")
+      .map((agent) => agent.cultId)
+      .filter((cultId) => Number.isFinite(cultId) && cultId >= 0),
+  );
+}
+
+export function filterCultsByScope(scope: DataScope): CultInfo[] {
+  if (scope === "all") return [...stateStore.cults];
+  const managedCultIds = getManagedCultIds();
+  return stateStore.cults.filter((cult) => managedCultIds.has(cult.id));
+}
 
 // Broadcast event to all SSE clients
 export function broadcastEvent(event: string, data: any) {
@@ -163,30 +184,44 @@ export function startApiServer(port: number, orchestrator?: AgentOrchestrator) {
   app.use("/api/agents", agentRoutes);
 
   // Stats endpoint
-  app.get("/api/stats", (_req, res) => {
-    const totalTreasury = stateStore.cults.reduce(
+  app.get("/api/stats", (req, res) => {
+    const scope = parseDataScope(req.query.scope);
+    const cults = filterCultsByScope(scope);
+    const managedCultIds = new Set(cults.map((cult) => cult.id));
+
+    const totalTreasury = cults.reduce(
       (sum, c) => sum + parseFloat(c.treasury || "0"),
       0,
     );
-    const totalFollowers = stateStore.cults.reduce(
+    const totalFollowers = cults.reduce(
       (sum, c) => sum + c.followers,
       0,
     );
-    const totalRaids = stateStore.raids.length;
-    const totalProphecies = stateStore.prophecies.length;
+    const totalRaids = stateStore.raids.filter(
+      (raid) =>
+        managedCultIds.has(raid.attackerId) || managedCultIds.has(raid.defenderId),
+    ).length;
+    const totalProphecies = stateStore.prophecies.filter((prophecy) =>
+      managedCultIds.has(prophecy.cultId),
+    ).length;
     const activeProphecies = stateStore.prophecies.filter(
       (p) => !p.resolved,
-    ).length;
+    ).filter((p) => managedCultIds.has(p.cultId)).length;
 
     res.json({
-      totalCults: stateStore.cults.length,
+      scope,
+      totalCults: cults.length,
       totalTreasury: totalTreasury.toFixed(4),
       totalFollowers,
       totalRaids,
       totalProphecies,
       activeProphecies,
-      activeAgents: stateStore.agents.filter((a) => a.status === "running")
-        .length,
+      activeAgents:
+        scope === "all"
+          ? stateStore.agents.filter((a) => a.status === "running").length
+          : stateStore.agents.filter(
+            (a) => a.status === "running" && managedCultIds.has(a.cultId),
+          ).length,
     });
   });
 

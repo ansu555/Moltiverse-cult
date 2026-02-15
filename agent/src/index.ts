@@ -148,7 +148,12 @@ function syncStateFromOrchestrator(orchestrator: AgentOrchestrator) {
   stateStore.leadershipElections = orchestrator.groupGovernanceService.getElections();
   stateStore.bribeOffers = orchestrator.groupGovernanceService.getBribeOffers({ limit: 500 });
   stateStore.leadershipStates = stateStore.cults.reduce((acc: Record<number, any>, cult) => {
-    acc[cult.id] = orchestrator.groupGovernanceService.getCurrentLeadership(cult.id);
+    const leadership = orchestrator.groupGovernanceService.getCurrentLeadership(cult.id);
+    const electionInfo = orchestrator.groupGovernanceService.getNextElectionInfo(cult.id);
+    acc[cult.id] = {
+      ...leadership,
+      ...electionInfo,
+    };
     return acc;
   }, {});
 }

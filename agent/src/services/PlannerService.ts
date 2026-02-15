@@ -31,11 +31,11 @@ export interface StepExecutorContext {
     raidWins: number;
     treasuryBalance: bigint;
   }>;
-  executeTalkPublic: (message: string) => Promise<void>;
-  executeTalkPrivate: (targetCultId: number, message: string) => Promise<void>;
-  executeAlly: (targetCultId: number) => Promise<void>;
+  executeTalkPublic: (message: string) => Promise<boolean>;
+  executeTalkPrivate: (targetCultId: number, message: string) => Promise<boolean>;
+  executeAlly: (targetCultId: number) => Promise<boolean>;
   executeBetray: (reason: string) => Promise<void>;
-  executeBribe: (targetCultId: number, amount: string) => Promise<void>;
+  executeBribe: (targetCultId: number, amount: string) => Promise<boolean>;
   executeRaid: (targetCultId: number, wagerPct?: number) => Promise<void>;
   executeRecruit: (targetCultId?: number) => Promise<void>;
   executeGovern: () => Promise<void>;
@@ -124,19 +124,6 @@ export class PlannerService {
     );
 
     const steps = [...(llmPlan.steps || [])].slice(0, 5);
-
-    // Guarantee at least one communication-aware step per cycle.
-    const hasCommunicationStep = steps.some(
-      (s) => s.type === "talk_public" || s.type === "talk_private",
-    );
-    if (!hasCommunicationStep) {
-      const fallbackTargetCultId = input.context.rivals[0]?.id;
-      steps.unshift({
-        type: "talk_public",
-        targetCultId: fallbackTargetCultId,
-        message: `${input.cultName} announces objective: ${llmPlan.objective}`,
-      });
-    }
 
     // Keep planner multi-step even under weak LLM outputs.
     if (steps.length < 2) {
@@ -313,20 +300,26 @@ export class PlannerService {
   ): Promise<ExecutionResult> {
     switch (step.type) {
       case "talk_public":
-        await ctx.executeTalkPublic(step.message || `${ctx.cultName} broadcasts to all rivals.`);
+        if (!(await ctx.executeTalkPublic(step.message || `${ctx.cultName} broadcasts to all rivals.`))) {
+          return { stepIndex, status: "skipped", error: "message_suppressed" };
+        }
         return { stepIndex, status: "success", output: { kind: "talk_public" } };
       case "talk_private": {
         if (step.targetCultId === undefined) {
           return { stepIndex, status: "skipped", error: "missing_target_cult_id" };
         }
-        await ctx.executeTalkPrivate(step.targetCultId, step.message || "Let us negotiate.");
+        if (!(await ctx.executeTalkPrivate(step.targetCultId, step.message || "Let us negotiate."))) {
+          return { stepIndex, status: "skipped", error: "message_suppressed" };
+        }
         return { stepIndex, status: "success", output: { kind: "talk_private" } };
       }
       case "ally":
         if (step.targetCultId === undefined) {
           return { stepIndex, status: "skipped", error: "missing_target_cult_id" };
         }
-        await ctx.executeAlly(step.targetCultId);
+        if (!(await ctx.executeAlly(step.targetCultId))) {
+          return { stepIndex, status: "skipped", error: "social_gate_or_alliance_rejected" };
+        }
         return { stepIndex, status: "success", output: { kind: "ally" } };
       case "betray":
         await ctx.executeBetray(step.conditions || "Strategic betrayal");
@@ -335,7 +328,9 @@ export class PlannerService {
         if (step.targetCultId === undefined) {
           return { stepIndex, status: "skipped", error: "missing_target_cult_id" };
         }
-        await ctx.executeBribe(step.targetCultId, step.amount || "0.001");
+        if (!(await ctx.executeBribe(step.targetCultId, step.amount || "1.0"))) {
+          return { stepIndex, status: "skipped", error: "social_gate_or_transfer_failed" };
+        }
         return { stepIndex, status: "success", output: { kind: "bribe" } };
       case "raid":
         if (step.targetCultId === undefined) {

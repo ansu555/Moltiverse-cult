@@ -146,6 +146,8 @@ export interface ConversationThreadRow {
   updated_at: number;
 }
 
+export type ConversationVisibilityScope = "all" | "public" | "private" | "leaked";
+
 export interface ConversationMessageRow {
   id: number;
   thread_id: number;
@@ -345,6 +347,18 @@ export async function updateAgentState(
     .update({ ...updates, updated_at: new Date().toISOString() })
     .eq("id", agentDbId);
   if (error) logDbWarn(`Failed to update agent ${agentDbId}`, error);
+}
+
+export async function updateAgentIdentity(
+  agentDbId: number,
+  updates: Partial<
+    Pick<AgentRow, "name" | "symbol" | "style" | "system_prompt" | "description">
+  >,
+): Promise<void> {
+  const db = getInsForgeClient().database;
+  const payload = { ...updates, updated_at: new Date().toISOString() };
+  const { error } = await db.from("agents").update(payload).eq("id", agentDbId);
+  if (error) logDbWarn(`Failed to update agent identity ${agentDbId}`, error);
 }
 
 // ── Memory Persistence ───────────────────────────────────────────────
@@ -1102,6 +1116,7 @@ export async function loadConversationThreads(options?: {
   limit?: number;
   agentId?: number;
   kind?: string;
+  visibility?: ConversationVisibilityScope;
 }): Promise<ConversationThreadRow[]> {
   const db = getInsForgeClient().database;
   let query = db
@@ -1110,6 +1125,9 @@ export async function loadConversationThreads(options?: {
     .order("updated_at", { ascending: false })
     .limit(options?.limit ?? 100);
   if (options?.kind) query = query.eq("kind", options.kind);
+  if (options?.visibility && options.visibility !== "all") {
+    query = query.eq("visibility", options.visibility);
+  }
   const { data, error } = await query;
   if (error || !data) {
     if (error) logDbWarn("Failed to load conversation threads", error);

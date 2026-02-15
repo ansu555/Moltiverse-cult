@@ -224,6 +224,14 @@ export default function GovernancePage() {
                                     </span>
                                 </div>
                                 <div className="text-xs text-gray-500 mt-1">
+                                    Next Election:{" "}
+                                    <span className="text-gray-200">
+                                        {state?.nextElectionCycle != null
+                                            ? `cycle ${state.nextElectionCycle} (eta ${state.etaCycles ?? "?"})`
+                                            : "Not scheduled"}
+                                    </span>
+                                </div>
+                                <div className="text-xs text-gray-500 mt-1">
                                     Latest Election:{" "}
                                     <span className="text-gray-200">
                                         {latest
@@ -269,6 +277,33 @@ export default function GovernancePage() {
                                 <div className="text-xs text-gray-500 mt-1">
                                     from agent {offer.from_agent_id} → agent {offer.to_agent_id} ·
                                     accept p={(offer.acceptance_probability * 100).toFixed(0)}%
+                                </div>
+                                <div className="text-xs text-gray-500 mt-1">
+                                    transfer:{" "}
+                                    <span
+                                        className={
+                                            offer.transferStatus === "confirmed"
+                                                ? "text-green-400"
+                                                : offer.transferStatus === "failed"
+                                                    ? "text-red-400"
+                                                    : "text-gray-300"
+                                        }
+                                    >
+                                        {offer.transferStatus || "unknown"}
+                                    </span>
+                                    {offer.transferTxHash ? (
+                                        <>
+                                            {" "}· tx{" "}
+                                            <a
+                                                href={`https://testnet.monadexplorer.com/tx/${offer.transferTxHash}`}
+                                                target="_blank"
+                                                rel="noreferrer"
+                                                className="text-cyan-400 hover:underline"
+                                            >
+                                                {offer.transferTxHash.slice(0, 10)}...{offer.transferTxHash.slice(-6)}
+                                            </a>
+                                        </>
+                                    ) : null}
                                 </div>
                             </div>
                         ))}

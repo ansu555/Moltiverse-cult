@@ -174,9 +174,34 @@ export interface DefectionEvent {
   timestamp: number;
 }
 
+export type CultScope = "managed" | "all";
+
 export const api = {
-  getStats: () => fetchJSON<Stats>("/api/stats"),
-  getCults: () => fetchJSON<Cult[]>("/api/cults"),
+  getStats: (options?: { scope?: CultScope }) => {
+    const params = new URLSearchParams();
+    params.set("scope", options?.scope || "managed");
+    return fetchJSON<Stats>(`/api/stats?${params.toString()}`);
+  },
+  getCults: (options?: { scope?: CultScope }) => {
+    const params = new URLSearchParams();
+    params.set("scope", options?.scope || "managed");
+    return fetchJSON<Cult[]>(`/api/cults?${params.toString()}`);
+  },
+  getCultsLeaderboard: (options?: { scope?: CultScope }) => {
+    const params = new URLSearchParams();
+    params.set("scope", options?.scope || "managed");
+    return fetchJSON<
+      Array<{
+        rank: number;
+        id: number;
+        name: string;
+        treasury: string;
+        followers: number;
+        raidWins: number;
+        raidLosses: number;
+      }>
+    >(`/api/cults/leaderboard?${params.toString()}`);
+  },
   getCult: (id: number) =>
     fetchJSON<Cult & { prophecies: Prophecy[]; raids: Raid[] }>(
       `/api/cults/${id}`,
@@ -269,6 +294,15 @@ export const api = {
 
   listManagedAgents: () =>
     fetchJSON<ManagedAgent[]>("/api/agents/management/list"),
+  applyPersonalities: () =>
+    postJSON<{
+      success: boolean;
+      applied: number;
+      skipped: number;
+      totalAgents: number;
+      totalPersonalities: number;
+      updates: Array<{ agentId: number; name: string; cultId: number | null }>;
+    }>("/api/agents/management/apply-personalities", {}),
 
   getAgentBalance: (id: number) =>
     fetchJSON<AgentBalance>(`/api/agents/management/${id}/balance`),
@@ -308,11 +342,17 @@ export const api = {
       `/api/chat/history?${params.toString()}`,
     );
   },
-  getChatThreads: (options?: { limit?: number; agentId?: number; kind?: string }) => {
+  getChatThreads: (options?: {
+    limit?: number;
+    agentId?: number;
+    kind?: string;
+    visibility?: "all" | "public" | "private" | "leaked";
+  }) => {
     const params = new URLSearchParams();
     if (options?.limit !== undefined) params.set("limit", String(options.limit));
     if (options?.agentId !== undefined) params.set("agentId", String(options.agentId));
     if (options?.kind) params.set("kind", options.kind);
+    if (options?.visibility) params.set("visibility", options.visibility);
     const qs = params.toString();
     return fetchJSON<ConversationThread[]>(`/api/chat/threads${qs ? `?${qs}` : ""}`);
   },
@@ -501,6 +541,9 @@ export interface LeadershipState {
   roundIndex: number;
   electionId: number | null;
   updatedAtCycle: number;
+  nextElectionCycle?: number | null;
+  currentCycle?: number;
+  etaCycles?: number | null;
 }
 
 export interface BribeOffer {
@@ -515,6 +558,8 @@ export interface BribeOffer {
   accepted_at: number | null;
   expires_at: number | null;
   createdAt: number;
+  transferTxHash?: string | null;
+  transferStatus?: "confirmed" | "failed" | "unknown";
 }
 
 export interface ManagedAgent {
