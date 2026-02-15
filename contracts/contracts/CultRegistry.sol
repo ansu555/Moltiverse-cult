@@ -158,6 +158,17 @@ contract CultRegistry {
         emit FollowersRecruited(cultId, count, msg.sender);
     }
 
+    /**
+     * @notice Admin function to correct follower counts (removes phantom followers)
+     */
+    function setFollowerCount(
+        uint256 cultId,
+        uint256 count
+    ) external onlyOwner {
+        require(cults[cultId].active, "Cult not active");
+        cults[cultId].followerCount = count;
+    }
+
     function recordRaid(
         uint256 attackerId,
         uint256 defenderId,

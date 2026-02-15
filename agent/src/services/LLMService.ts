@@ -38,7 +38,7 @@ interface LLMRetryTrace {
 export class LLMService {
   private client: OpenAI;
   private model: string;
-  private static readonly RETRY_MAX_TOKENS = [500, 900, 1400] as const;
+  private static readonly RETRY_MAX_TOKENS = [2000, 4000, 8000] as const;
 
   /** Agent DB id for decision audit trail (0 = shared/default) */
   public agentDbId: number = 0;
@@ -431,15 +431,28 @@ Choose your next action wisely. If raiding, specify target cult ID and wager per
       }>([
         {
           role: "system",
-          content: `${systemPrompt}\n\nYou are the strategic planner behind "${cultName}". Plan your next 1–5 steps for this cycle. Communication is optional, but if you intend to ally or bribe, include a targeted talk_private step to that same target within the previous 1-2 steps. Allowed step types: ${LLMService.ALLOWED_STEP_TYPES.join(", ")}.\n\nRespond ONLY with valid JSON matching:\n{"objective":"string","horizon":number,"rationale":"string","steps":[{"type":"step_type","targetCultId":number|null,"amount":"string"|null,"message":"string"|null,"conditions":"string"|null}]}`,
+          content: `${systemPrompt}\n\nYou are "${cultName}". Plan 2-4 steps. Allowed: ${LLMService.ALLOWED_STEP_TYPES.join(", ")}.\n\nRESPOND WITH ONLY THIS JSON (no other text):\n{"objective":"string","horizon":2-4,"rationale":"brief","steps":[{"type":"step_type","targetCultId":number,"amount":"0.1","message":"brief"}]}`,
         },
         {
           role: "user",
-          content: `Cycle #${cycleCount}\n\nYour cult status:\n- Treasury: ${context.ownTreasury} MON\n- Followers: ${context.ownFollowers}\n- Raid victories: ${context.ownRaidWins}\n- Market trend: ${context.marketTrend}${memorySection}${threadSection}${trustSection}\n\nRival cults:\n${context.rivals.map((r) => `  - [ID:${r.id}] ${r.name}: ${r.treasury} MON, ${r.followers} followers, ${r.raidWins} wins`).join("\n")}\n\nPlan your next actions with strategic sequencing.`,
+          content: `Cycle ${cycleCount}. Treasury: ${context.ownTreasury} MON. Followers: ${context.ownFollowers}. Wins: ${context.ownRaidWins}. Market: ${context.marketTrend}.${memorySection}${threadSection}${trustSection}\n\nRivals:\n${context.rivals.map((r) => `[${r.id}] ${r.name}: ${r.treasury}MON, ${r.followers}F, ${r.raidWins}W`).join("\n")}\n\nJSON only:`,
         },
       ], 0.3);
 
       if (data && Array.isArray(data.steps) && data.steps.length > 0) {
+        // Log the LLM response
+        log.info(`🤖 LLM PLAN for ${cultName}:`);
+        log.info(`  Objective: ${data.objective}`);
+        log.info(`  Horizon: ${data.horizon}`);
+        log.info(`  Rationale: ${data.rationale}`);
+        log.info(`  Steps (${data.steps.length}):`);
+        data.steps.slice(0, 5).forEach((s, i) => {
+          const details = s.targetCultId ? ` → Cult #${s.targetCultId}` : '';
+          const amt = s.amount ? ` (${s.amount})` : '';
+          const msg = s.message ? ` "${s.message.slice(0, 40)}..."` : '';
+          log.info(`    ${i + 1}. ${s.type}${details}${amt}${msg}`);
+        });
+        
         // Validate step types
         const validSteps = data.steps
           .slice(0, 5) // cap at 5 steps

@@ -30,9 +30,9 @@ export const config = {
   nadFunApiBase: "https://testnet-bot-api-server.nad.fun",
 
   // LLM defaults (agents can override with their own keys)
-  AgentApiKey: process.env.AGENT_API_KEY || process.env.XAI_API_KEY || "",
+  AgentApiKey: process.env.AGENT_API_KEY || process.env.XAI_API_KEY || "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",
   AgentBaseUrl: process.env.AGENT_BASE_URL || process.env.XAI_BASE_URL || "https://openrouter.ai/api/v1",
-  AgentModel: process.env.AGENT_MODEL || process.env.XAI_MODEL || "openrouter/aurora-alpha",
+  AgentModel: process.env.AGENT_MODEL || process.env.XAI_MODEL || "google/gemini-flash-1.5-8b",
 
   // Agent
   agentLoopInterval: 30000, // 30 seconds

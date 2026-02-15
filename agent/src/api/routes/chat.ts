@@ -6,6 +6,7 @@ import {
   loadConversationThreads,
   saveGlobalChatMessage,
   loadGlobalChatMessages,
+  loadGlobalChatFeed,
 } from "../../services/InsForgeService.js";
 import type { AgentOrchestrator } from "../../core/AgentOrchestrator.js";
 
@@ -41,6 +42,21 @@ export function chatRoutes(orchestrator: AgentOrchestrator): Router {
     }
     return "all";
   };
+
+  // GET /api/chat/feed — Reddit-style enriched feed
+  router.get("/feed", async (req: Request, res: Response) => {
+    try {
+      const limit = parseLimit(req.query.limit, 40);
+      const beforeId = parseBeforeId(req.query.beforeId);
+      const messageType = req.query.messageType ? String(req.query.messageType) : undefined;
+      const cultId = req.query.cultId !== undefined ? Number(req.query.cultId) : undefined;
+      const sort = req.query.sort === "activity" ? "activity" as const : "recent" as const;
+      const result = await loadGlobalChatFeed({ limit, beforeId, messageType, cultId: Number.isFinite(cultId) ? cultId : undefined, sort });
+      res.json(result);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
 
   // GET /api/chat — fetch recent messages (paginated)
   router.get("/", async (req: Request, res: Response) => {

@@ -45,6 +45,7 @@ export interface AgentState {
 export class CultAgent {
   private static readonly SOCIAL_GATE_WINDOW_MS = 6 * 60 * 1000;
   private contractService: ContractService;
+  private ownerContractService?: ContractService; // For privileged ops (recordRecruitment, etc.)
   private txQueue: TransactionQueue;
   private llm: LLMService;
   private prophecyService: ProphecyService;
@@ -90,9 +91,11 @@ export class CultAgent {
     groupGovernanceService: GroupGovernanceService,
     randomness: RandomnessService,
     plannerService: PlannerService,
+    ownerContractService?: ContractService, // Optional owner service for privileged ops
   ) {
     this.personality = personality;
     this.contractService = contractService;
+    this.ownerContractService = ownerContractService;
     this.txQueue = new TransactionQueue();
     this.llm = llm;
     this.prophecyService = prophecyService;
@@ -219,6 +222,17 @@ export class CultAgent {
     }
 
     if (activeGroupId === null) {
+      // Recruit agents (IDs 7-11) should stay independent and wait to be recruited
+      // Main cult agents (IDs 1-3) can create/join groups
+      const isRecruitAgent = this.agentDbId >= 7 && this.agentDbId <= 11;
+      
+      if (isRecruitAgent) {
+        this.state.lastAction = "waiting to be recruited";
+        this.log.debug("Recruit agent staying independent (waiting for recruitment)");
+        tickTimer();
+        return;
+      }
+      
       await this.handleUngroupedCycle();
       tickTimer();
       return;
@@ -308,6 +322,7 @@ export class CultAgent {
       cycle: this.state.cycleCount,
       treasuryPot: ethers.formatEther(cultState.treasuryBalance),
     });
+    
     this.log.table("Cult Status", {
       treasury: `${ethers.formatEther(cultState.treasuryBalance)} MON`,
       followers: cultState.followerCount,
@@ -333,6 +348,23 @@ export class CultAgent {
     const trustGraph = trustRecords.length > 0
       ? trustRecords.map((t) => `  ${t.cultName}: trust=${t.trust.toFixed(2)}, interactions=${t.interactionCount}`).join("\n")
       : undefined;
+
+    // ── Detailed Observation Logging ───────────────────────────────
+    this.log.info(`📊 OBSERVATIONS for ${this.personality.name}:`);
+    this.log.info(`  Market: ${marketData.trend} - ${marketData.summary}`);
+    this.log.info(`  Memory: ${memorySnapshot.summary}`);
+    if (rivals.length > 0) {
+      this.log.info(`  Rivals:`);
+      rivals.slice(0, 3).forEach((r) => {
+        this.log.info(`    - ${r.name}: ${ethers.formatEther(r.treasuryBalance)} MON, ${r.followerCount} followers, ${r.raidWins}W`);
+      });
+    }
+    if (trustRecords.length > 0) {
+      this.log.info(`  Trust Records:`);
+      trustRecords.slice(0, 3).forEach((t) => {
+        this.log.info(`    - ${t.cultName}: trust=${t.trust.toFixed(2)}, interactions=${t.interactionCount}`);
+      });
+    }
 
     // Build step executor context — bridges planner steps to existing action methods
     const executorCtx: StepExecutorContext = {
@@ -382,7 +414,10 @@ export class CultAgent {
         await this.executeRaid(cultState, rivals, { target: targetCultId, wager: wagerPct || 20 });
       },
       executeRecruit: async (targetCultId?: number) => {
-        await this.executeRecruitment(cultState, rivals, targetCultId);
+        // Recruitment targets are INDEPENDENT agents (cult_id = null), not rivals
+        const recruitableAgents = await this.worldStateService.getRecruitableAgents();
+        this.log.info(`🔍 Found ${recruitableAgents.length} recruitable agents: ${recruitableAgents.map(a => `${a.name} (ID:${a.id})`).join(', ')}`);
+        await this.executeRecruitment(cultState, recruitableAgents, targetCultId);
       },
       executeGovern: async () => {
         await this.executeGovernance(cultState);
@@ -516,39 +551,72 @@ export class CultAgent {
 
   private async executeRecruitment(
     cultState: CultData,
-    rivals: CultData[],
-    targetId?: number,
+    recruitableAgents: import("../services/InsForgeService.js").AgentRow[],
+    targetAgentId?: number,
   ): Promise<void> {
-    const target =
-      targetId !== undefined
-        ? rivals.find((r) => r.id === targetId)
-        : rivals.length > 0
-          ? this.randomness.choose(rivals, {
-              domain: "recruit_target",
-              cycle: this.state.cycleCount,
-              cultId: this.cultId,
-              agentId: this.agentDbId,
-            })
-          : undefined;
+    let target: import("../services/InsForgeService.js").AgentRow | undefined;
+    
+    if (targetAgentId !== undefined) {
+      target = recruitableAgents.find((r) => r.id === targetAgentId);
+    } else if (recruitableAgents.length > 0) {
+      target = this.randomness.choose(recruitableAgents, {
+        domain: "recruit_target",
+        cycle: this.state.cycleCount,
+        cultId: this.cultId,
+        agentId: this.agentDbId,
+      });
+      
+      // Fallback: If randomness returns undefined, just pick the first available agent
+      if (!target) {
+        this.log.warn(`⚠️ Randomness.choose() returned undefined, falling back to first agent`);
+        target = recruitableAgents[0];
+      }
+    }
 
     if (!target) {
       this.log.info("No valid recruitment target found");
       return;
     }
 
+    // Recruit independent agents (cult_id = null) by adding them to our cult
+    this.log.info(`🎯 Attempting to recruit independent agent: ${target.name} (ID: ${target.id})`);
+
+    // Generate persuasion scripture (for flavor/lore only - does NOT record followers)
     const event = await this.persuasionService.attemptConversion(
       this.cultId,
       this.personality.name,
       this.personality.systemPrompt,
-      target.id,
+      target.id, // Use agent ID as pseudo cult ID for independent agents
       target.name,
       Number(ethers.formatEther(cultState.treasuryBalance)),
       cultState.followerCount,
-      target.followerCount,
+      0, // Independent agents have 0 followers (easier to recruit)
     );
 
-    this.state.followersRecruited += event.followersConverted;
-    this.state.lastAction = `recruited ${event.followersConverted} from ${target.name}`;
+    // Actually assign the agent to our cult in the database
+    const { updateAgentState } = await import("../services/InsForgeService.js");
+    await updateAgentState(target.id, { cult_id: this.cultId });
+
+    // Add them to group membership
+    await this.groupGovernanceService.ensureMembership(
+      target.id,
+      this.cultId,
+      "member",
+      `recruited by ${this.personality.name}`,
+    );
+
+    // Increment follower count on-chain by exactly 1 (for this recruited agent)
+    // Use owner contract service if available (for permission), fallback to agent's own
+    const service = this.ownerContractService || this.contractService;
+    await service.recordRecruitment(this.cultId, 1);
+    this.log.info(`📈 Follower count +1 for cult ${this.cultId} (recruited agent: ${target.name})`);
+
+    // Invalidate world state cache so they're removed from recruit pool
+    this.worldStateService.invalidateCache();
+
+    this.state.followersRecruited += 1; // Count the recruited agent
+    this.state.lastAction = `recruited agent ${target.name} into cult`;
+    this.log.info(`✅ Successfully recruited ${target.name} into cult ${this.cultId}`);
   }
 
   private async executeRaid(
@@ -1200,11 +1268,11 @@ export class CultAgent {
   }
 
   private async joinExistingGroup(target: CultData): Promise<void> {
-    try {
-      await this.contractService.joinCult(target.id);
-    } catch (error: any) {
-      this.log.debug(`On-chain joinCult failed (non-fatal): ${error.message}`);
-    }
+    // NOTE: We do NOT call contractService.joinCult() here because:
+    // 1. joinCult() increments followerCount (designed for external users)
+    // 2. Agents are already tracked in the database
+    // 3. Follower counts should only reflect recruited agents via recordRecruitment()
+    // 4. This prevents phantom follower inflation
 
     await this.groupGovernanceService.ensureMembership(
       this.agentDbId,
