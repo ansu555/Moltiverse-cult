@@ -4,6 +4,7 @@ import { ContractService } from "../chain/ContractService.js";
 import { MemoryService } from "./MemoryService.js";
 import { createLogger } from "../utils/logger.js";
 import { saveDefection } from "./InsForgeService.js";
+import { RandomnessService } from "./RandomnessService.js";
 
 const log = createLogger("DefectionService");
 
@@ -29,6 +30,7 @@ export interface DefectionEvent {
  *   - Stronger cults with winning streaks attract defectors
  */
 export class DefectionService {
+    private readonly randomness: RandomnessService;
     private events: DefectionEvent[] = [];
     private memoryService: MemoryService;
     private contractService: ContractService | null = null;
@@ -44,9 +46,14 @@ export class DefectionService {
     /** Losing streak multiplier for defection */
     private static readonly STREAK_MULTIPLIER = 0.08;
 
-    constructor(memoryService: MemoryService, contractService?: ContractService) {
+    constructor(
+        memoryService: MemoryService,
+        contractService?: ContractService,
+        randomness?: RandomnessService,
+    ) {
         this.memoryService = memoryService;
         this.contractService = contractService || null;
+        this.randomness = randomness || new RandomnessService();
     }
 
     /**
@@ -97,7 +104,14 @@ export class DefectionService {
         probability = Math.min(0.8, probability);
 
         // Roll the dice
-        if (Math.random() > probability) return null;
+        const cycle = this.events.length;
+        const defectRoll = this.randomness.float({
+            domain: "defection_roll",
+            cycle,
+            cultId: losingCult.id,
+            agentId: winningCult.id,
+        });
+        if (defectRoll > probability) return null;
 
         // Calculate how many followers defect
         const maxDefectors = Math.floor(
@@ -105,7 +119,14 @@ export class DefectionService {
         );
         const defectors = Math.max(
             DefectionService.MIN_DEFECTORS,
-            Math.floor(Math.random() * maxDefectors) + 1,
+            Math.floor(
+                this.randomness.float({
+                    domain: "defection_count",
+                    cycle,
+                    cultId: losingCult.id,
+                    agentId: winningCult.id,
+                }) * maxDefectors,
+            ) + 1,
         );
 
         // Build defection reason

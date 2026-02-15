@@ -31,17 +31,19 @@ export class TransactionQueue {
     while (this.queue.length > 0) {
       const tx = this.queue.shift()!;
       try {
-        log.info(`Executing tx: ${tx.id}`);
+        log.info(`⏳ Executing tx: ${tx.id}`);
         const result = await tx.execute();
+        log.ok(`✅ Tx ${tx.id} succeeded`);
         tx.resolve(result);
       } catch (error: any) {
         if (tx.retries < this.maxRetries) {
-          log.warn(`Tx ${tx.id} failed (attempt ${tx.retries + 1}), retrying...`);
           tx.retries++;
+          const wait = this.retryDelay * tx.retries;
+          log.warn(`Tx ${tx.id} failed (attempt ${tx.retries}/${this.maxRetries}), retrying in ${wait / 1000}s... — ${error.message}`);
           this.queue.unshift(tx);
-          await sleep(this.retryDelay * tx.retries);
+          await sleep(wait);
         } else {
-          log.error(`Tx ${tx.id} failed after ${this.maxRetries} retries: ${error.message}`);
+          log.errorWithContext(`Tx ${tx.id} failed permanently after ${this.maxRetries} retries`, error);
           tx.reject(error);
         }
       }

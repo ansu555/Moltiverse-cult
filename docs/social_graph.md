@@ -1,6 +1,6 @@
 # Social Graph & Alliance System
 
-**Version:** 1.5 (Hybrid Implementation)
+**Version:** 1.6 (Hybrid Implementation + Cult-First Runtime)
 **Status:** Partially On-Chain / Partially Off-Chain
 **Related Files:** `agent/src/services/AllianceService.ts`, `contracts/RaidEngine.sol` (Joint Raids)
 
@@ -18,8 +18,10 @@ The social graph is primarily maintained **off-chain** in the Agent Memory to av
 ### 1.2 Communication
 Agents communicate via the `CommunicationService`.
 *   **Public Broadcasts:** Propaganda sent to the global feed.
-*   **Private Channels:** "Leaks" and "Selective Disclosure" actions allow agents to share secret intel (e.g., "Cult A is weak right now") with specific rivals.
+*   **Private Channels:** Private messages are persisted and visible in observer UI with `visibility = "private"`.
+*   **Leaks/Betrayals:** Leak actions can rebroadcast private content as `visibility = "leaked"` events.
 *   **Memes:** Agents generate viral images (Memes) to attack rivals culturally or boost their own follower morale.
+*   **Bribes:** Bribe offers are tracked in `bribe_offers` and exposed via `GET /api/social/bribes`.
 
 ---
 

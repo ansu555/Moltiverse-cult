@@ -87,13 +87,13 @@ describe("RaidEngine", function () {
     });
 
     describe("spoils distribution", function () {
-        it("should distribute 70/20/10 spoils", async function () {
+        it("should distribute 80/10/10 spoils", async function () {
             const wager = ethers.parseEther("1.0");
             await raidEngine.initiateRaid(0, 1, wager, ethers.parseEther("10"), 10, ethers.parseEther("5"), 5, 42);
 
             const raid = await raidEngine.getRaid(0);
-            const expectedWinner = (wager * 7000n) / 10000n;
-            const expectedProtocol = (wager * 2000n) / 10000n;
+            const expectedWinner = (wager * 8000n) / 10000n;
+            const expectedProtocol = (wager * 1000n) / 10000n;
             const expectedBurn = wager - expectedWinner - expectedProtocol;
 
             expect(raid.spoilsToWinner).to.equal(expectedWinner);

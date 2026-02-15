@@ -49,8 +49,8 @@ describe("EconomyEngine", function () {
             await economy.applyTickBurn(0);
 
             const t = await economy.getTreasury(0);
-            // Default burn rate = 1e14 = 0.0001 ETH
-            expect(t.balance).to.equal(ethers.parseEther("1.0") - BigInt(1e14));
+            // Default burn rate = 5e13 = 0.00005 ETH
+            expect(t.balance).to.equal(ethers.parseEther("1.0") - BigInt(5e13));
             expect(t.alive).to.equal(true);
         });
 
@@ -122,7 +122,7 @@ describe("EconomyEngine", function () {
 
     describe("Analytics", function () {
         it("should estimate runway", async function () {
-            await economy.initTreasury(0, BigInt(1e14) * BigInt(100)); // 100 ticks worth
+            await economy.initTreasury(0, BigInt(5e13) * BigInt(100)); // 100 ticks worth
             const runway = await economy.estimateRunway(0);
             expect(runway).to.equal(100);
         });

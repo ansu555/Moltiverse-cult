@@ -251,4 +251,11 @@ export class ProphecyService {
       log.warn(`Prophecy hydration failed for cult ${cultId}: ${err.message}`);
     }
   }
+
+  getAccuracyForCult(cultId: number): number {
+    const cultProphecies = this.prophecies.filter(p => p.cultId === cultId && p.resolved);
+    if (cultProphecies.length === 0) return 0.5; // Default to neutral if no history
+    const correct = cultProphecies.filter(p => p.correct).length;
+    return correct / cultProphecies.length;
+  }
 }

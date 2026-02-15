@@ -398,6 +398,14 @@ The numbers MUST sum to exactly 100.`;
         return [...this.localProposals].reverse();
     }
 
+    getAllBudgets(): Record<number, BudgetAllocation> {
+        const result: Record<number, BudgetAllocation> = {};
+        for (const [cultId, budget] of this.localBudgets) {
+            result[cultId] = budget;
+        }
+        return result;
+    }
+
     private makeProposal(
         id: number,
         cultId: number,

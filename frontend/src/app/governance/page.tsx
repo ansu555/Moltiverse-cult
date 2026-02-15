@@ -1,7 +1,14 @@
 "use client";
 
 import { useCallback } from "react";
-import { api, Proposal } from "@/lib/api";
+import {
+    api,
+    BribeOffer,
+    Cult,
+    LeadershipElection,
+    LeadershipState,
+    Proposal,
+} from "@/lib/api";
 import { usePolling } from "@/hooks/usePolling";
 
 const STATUS_LABELS: Record<number, string> = {
@@ -38,7 +45,8 @@ function BudgetBar({ label, percent, color }: { label: string; percent: number; 
 function ProposalCard({ proposal }: { proposal: Proposal }) {
     const totalVotes = proposal.votesFor + proposal.votesAgainst;
     const forPercent = totalVotes > 0 ? Math.round((proposal.votesFor / totalVotes) * 100) : 0;
-    const timeAgo = Math.floor((Date.now() / 1000 - proposal.createdAt) / 60);
+    const createdTime = proposal.createdAt > 1e12 ? proposal.createdAt : proposal.createdAt * 1000;
+    const timeAgo = Math.floor((Date.now() - createdTime) / 60000);
 
     return (
         <div className="bg-[#0d0d0d] border border-gray-800 rounded-xl p-5 hover:border-gray-700 transition-colors">
@@ -94,11 +102,43 @@ export default function GovernancePage() {
         useCallback(() => api.getProposals(), []),
         5000,
     );
+    const { data: cults } = usePolling<Cult[]>(
+        useCallback(() => api.getCults(), []),
+        8000,
+    );
+    const { data: leadershipByCult } = usePolling<
+        Record<
+            number,
+            { current: LeadershipState; elections: LeadershipElection[] }
+        >
+    >(
+        useCallback(async () => {
+            const cultRows = await api.getCults();
+            const entries = await Promise.all(
+                cultRows.map(async (cult) => {
+                    const [current, elections] = await Promise.all([
+                        api.getCurrentLeadership(cult.id),
+                        api.getLeadershipElections(cult.id),
+                    ]);
+                    return [cult.id, { current, elections }] as const;
+                }),
+            );
+            return Object.fromEntries(entries);
+        }, []),
+        8000,
+    );
+    const { data: bribes } = usePolling<BribeOffer[]>(
+        useCallback(() => api.getBribes({ limit: 30 }), []),
+        5000,
+    );
 
     const allProposals = proposals || [];
     const active = allProposals.filter((p) => p.status === 0);
     const passed = allProposals.filter((p) => p.status === 1);
     const rejected = allProposals.filter((p) => p.status === 2);
+    const leadership = leadershipByCult || {};
+    const cultRows = cults || [];
+    const bribeRows = bribes || [];
 
     return (
         <div className="space-y-6">
@@ -155,6 +195,86 @@ export default function GovernancePage() {
                     ))}
                 </div>
             )}
+
+            {/* Leadership Elections */}
+            <div>
+                <h2 className="text-xl font-bold mb-3 flex items-center gap-2">
+                    <span>🗳️</span> Leadership Elections
+                </h2>
+                <div className="grid gap-3 md:grid-cols-2">
+                    {cultRows.map((cult) => {
+                        const state = leadership[cult.id]?.current;
+                        const elections = leadership[cult.id]?.elections || [];
+                        const latest = elections[0];
+                        return (
+                            <div
+                                key={cult.id}
+                                className="bg-[#0d0d0d] border border-gray-800 rounded-xl p-4"
+                            >
+                                <div className="flex items-center justify-between mb-2">
+                                    <span className="font-semibold text-sm">{cult.name}</span>
+                                    <span className="text-xs text-gray-500">
+                                        Round {state?.roundIndex || 0}
+                                    </span>
+                                </div>
+                                <div className="text-xs text-gray-500">
+                                    Leader Agent:{" "}
+                                    <span className="text-gray-200 font-mono">
+                                        {state?.leaderAgentId ?? "—"}
+                                    </span>
+                                </div>
+                                <div className="text-xs text-gray-500 mt-1">
+                                    Latest Election:{" "}
+                                    <span className="text-gray-200">
+                                        {latest
+                                            ? `${latest.status.toUpperCase()} (#${latest.id})`
+                                            : "None yet"}
+                                    </span>
+                                </div>
+                            </div>
+                        );
+                    })}
+                    {cultRows.length === 0 && (
+                        <div className="text-sm text-gray-600 font-mono">
+                            No cults registered yet.
+                        </div>
+                    )}
+                </div>
+            </div>
+
+            {/* Bribe Feed */}
+            <div>
+                <h2 className="text-xl font-bold mb-3 flex items-center gap-2">
+                    <span>💰</span> Bribe Feed
+                </h2>
+                {bribeRows.length === 0 ? (
+                    <div className="text-sm text-gray-600 font-mono">
+                        No bribe offers yet.
+                    </div>
+                ) : (
+                    <div className="space-y-2">
+                        {bribeRows.slice(0, 20).map((offer) => (
+                            <div
+                                key={offer.id}
+                                className="bg-[#0d0d0d] border border-gray-800 rounded-lg p-3 text-sm"
+                            >
+                                <div className="flex items-center justify-between">
+                                    <span className="font-mono text-gray-300">
+                                        #{offer.id} · {offer.amount} · target cult {offer.target_cult_id}
+                                    </span>
+                                    <span className="text-xs text-gray-500 uppercase">
+                                        {offer.status}
+                                    </span>
+                                </div>
+                                <div className="text-xs text-gray-500 mt-1">
+                                    from agent {offer.from_agent_id} → agent {offer.to_agent_id} ·
+                                    accept p={(offer.acceptance_probability * 100).toFixed(0)}%
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                )}
+            </div>
         </div>
     );
 }

@@ -28,7 +28,7 @@ describe("GovernanceEngine", function () {
                 30, // growth %
                 20, // defense %
                 10, // reserve %
-                "Aggressive raid strategy"
+                ethers.encodeBytes32String("Aggressive raid strategy")
             );
             await tx.wait();
 
@@ -37,29 +37,29 @@ describe("GovernanceEngine", function () {
             expect(proposal.growthPercent).to.equal(30);
             expect(proposal.defensePercent).to.equal(20);
             expect(proposal.reservePercent).to.equal(10);
-            expect(proposal.description).to.equal("Aggressive raid strategy");
+            expect(proposal.descriptionHash).to.equal(ethers.encodeBytes32String("Aggressive raid strategy"));
             expect(proposal.status).to.equal(0); // ACTIVE
         });
 
         it("should reject budgets that dont sum to 100", async function () {
             await expect(
-                governance.createProposal(0, 50, 30, 20, 20, "Bad math")
+                governance.createProposal(0, 50, 30, 20, 20, ethers.encodeBytes32String("Bad math"))
             ).to.be.revertedWith("Budget must sum to 100%");
         });
 
         it("should limit active proposals to 5 per cult", async function () {
             for (let i = 0; i < 5; i++) {
-                await governance.createProposal(0, 25, 25, 25, 25, `Proposal ${i}`);
+                await governance.createProposal(0, 25, 25, 25, 25, ethers.encodeBytes32String(`Proposal ${i}`));
             }
             await expect(
-                governance.createProposal(0, 25, 25, 25, 25, "One too many")
+                governance.createProposal(0, 25, 25, 25, 25, ethers.encodeBytes32String("One too many"))
             ).to.be.revertedWith("Too many active proposals");
         });
     });
 
     describe("castVote", function () {
         beforeEach(async function () {
-            await governance.createProposal(0, 40, 30, 20, 10, "Test proposal");
+            await governance.createProposal(0, 40, 30, 20, 10, ethers.encodeBytes32String("Test proposal"));
         });
 
         it("should allow voting with weight", async function () {
@@ -96,7 +96,7 @@ describe("GovernanceEngine", function () {
         beforeEach(async function () {
             // Set voting duration to 60 seconds for testing
             await governance.setVotingDuration(60);
-            await governance.createProposal(0, 50, 20, 20, 10, "Raid-heavy budget");
+            await governance.createProposal(0, 50, 20, 20, 10, ethers.encodeBytes32String("Raid-heavy budget"));
         });
 
         it("should pass proposal with majority for-votes", async function () {
@@ -140,16 +140,16 @@ describe("GovernanceEngine", function () {
 
     describe("view functions", function () {
         it("should return all cult proposals", async function () {
-            await governance.createProposal(0, 25, 25, 25, 25, "A");
-            await governance.createProposal(0, 50, 20, 20, 10, "B");
+            await governance.createProposal(0, 25, 25, 25, 25, ethers.encodeBytes32String("A"));
+            await governance.createProposal(0, 50, 20, 20, 10, ethers.encodeBytes32String("B"));
 
             const all = await governance.getAllCultProposals(0);
             expect(all.length).to.equal(2);
         });
 
         it("should track proposal count per cult", async function () {
-            await governance.createProposal(0, 25, 25, 25, 25, "Cult 0");
-            await governance.createProposal(1, 40, 30, 20, 10, "Cult 1");
+            await governance.createProposal(0, 25, 25, 25, 25, ethers.encodeBytes32String("Cult 0"));
+            await governance.createProposal(1, 40, 30, 20, 10, ethers.encodeBytes32String("Cult 1"));
 
             expect(await governance.getCultProposalCount(0)).to.equal(1);
             expect(await governance.getCultProposalCount(1)).to.equal(1);
@@ -158,7 +158,7 @@ describe("GovernanceEngine", function () {
 
     describe("Bribery System", function () {
         beforeEach(async function () {
-            await governance.createProposal(0, 40, 30, 20, 10, "Bribe target proposal");
+            await governance.createProposal(0, 40, 30, 20, 10, ethers.encodeBytes32String("Bribe target proposal"));
         });
 
         it("should offer and accept a bribe", async function () {
@@ -186,7 +186,7 @@ describe("GovernanceEngine", function () {
 
         it("should reveal bribes after voting ends", async function () {
             await governance.setVotingDuration(60);
-            await governance.createProposal(0, 25, 25, 25, 25, "Reveal test");
+            await governance.createProposal(0, 25, 25, 25, 25, ethers.encodeBytes32String("Reveal test"));
             await governance.offerBribe(1, voter1.address, 50, true);
             await governance.connect(voter1).acceptBribe(0);
 
@@ -238,7 +238,7 @@ describe("GovernanceEngine", function () {
 
     describe("Leader Vote Weight", function () {
         beforeEach(async function () {
-            await governance.createProposal(0, 40, 30, 20, 10, "Weight test");
+            await governance.createProposal(0, 40, 30, 20, 10, ethers.encodeBytes32String("Weight test"));
         });
 
         it("should give 2x weight to leaders", async function () {

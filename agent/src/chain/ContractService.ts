@@ -60,13 +60,45 @@ export class ContractService {
     return this.provider.getBalance(this.wallet.address);
   }
 
+  /**
+   * Fund a target wallet from this wallet. Used by the deployer wallet
+   * to send MON to each agent's auto-generated wallet.
+   */
+  async fundWallet(targetAddress: string, amount: bigint): Promise<void> {
+    const balance = await this.getBalance();
+    if (balance < amount) {
+      throw new Error(
+        `Deployer wallet has insufficient balance: ${ethers.formatEther(balance)} MON ` +
+        `(need ${ethers.formatEther(amount)} MON to fund ${targetAddress})`
+      );
+    }
+    log.info(`💸 Funding wallet ${targetAddress} with ${ethers.formatEther(amount)} MON`);
+    const tx = await this.wallet.sendTransaction({
+      to: targetAddress,
+      value: amount,
+    });
+    await tx.wait();
+    log.ok(`Wallet ${targetAddress} funded (tx: ${tx.hash.slice(0, 18)}...)`);
+  }
+
   async registerCult(
     name: string,
     prophecyPrompt: string,
     tokenAddress: string,
     initialTreasury: bigint = 0n,
   ): Promise<number> {
-    log.info(`Registering cult: ${name}`);
+    // Pre-flight: check wallet balance
+    const balance = await this.getBalance();
+    const requiredEstimate = initialTreasury + ethers.parseEther("0.002"); // treasury + gas headroom
+    if (balance < requiredEstimate) {
+      throw new Error(
+        `Agent wallet ${this.wallet.address} has insufficient balance: ` +
+        `${ethers.formatEther(balance)} MON (need ~${ethers.formatEther(requiredEstimate)} MON). ` +
+        `Fund the wallet first.`
+      );
+    }
+
+    log.info(`📝 Registering cult: "${name}" (treasury: ${ethers.formatEther(initialTreasury)} MON, wallet balance: ${ethers.formatEther(balance)} MON)`);
     const tx = await this.registry.registerCult(
       name,
       prophecyPrompt,

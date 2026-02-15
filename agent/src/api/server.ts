@@ -11,6 +11,8 @@ import { communicationRoutes } from "./routes/communication.js";
 import { sseRoutes } from "./routes/sse.js";
 import { agentCreationRoutes } from "./routes/agentCreation.js";
 import { memeTransferRoutes } from "./routes/memeTransfers.js";
+import { chatRoutes } from "./routes/chat.js";
+import { plannerRoutes } from "./routes/plans.js";
 import type { AgentOrchestrator } from "../core/AgentOrchestrator.js";
 
 const log = createLogger("API");
@@ -30,6 +32,10 @@ export interface StateStore {
   memory: Record<number, any>;
   messages: any[];
   evolutionTraits: Record<number, any>;
+  groupMemberships: any[];
+  leadershipStates: Record<number, any>;
+  leadershipElections: any[];
+  bribeOffers: any[];
   sseClients: express.Response[];
 }
 
@@ -99,6 +105,10 @@ export const stateStore: StateStore = {
   memory: {},
   messages: [],
   evolutionTraits: {},
+  groupMemberships: [],
+  leadershipStates: {},
+  leadershipElections: [],
+  bribeOffers: [],
   sseClients: [],
 };
 
@@ -132,19 +142,25 @@ export function startApiServer(port: number, orchestrator?: AgentOrchestrator) {
 
   // Mount routes
   app.use("/api/cults", cultRoutes);
+  // PROPHECY_DISABLED_START
   app.use("/api/prophecies", prophecyRoutes);
+  // PROPHECY_DISABLED_END
   app.use("/api/raids", raidRoutes);
-  app.use("/api/agents", agentRoutes);
   app.use("/api/governance", governanceRoutes);
   app.use("/api/alliances", allianceRoutes(stateStore));
   app.use("/api/communication", communicationRoutes(stateStore));
   app.use("/api/events", sseRoutes);
 
-  // Mount new routes (require orchestrator for dynamic agent management)
+  // Mount dynamic agent management routes (require orchestrator)
   if (orchestrator) {
-    app.use("/api/agents", agentCreationRoutes(orchestrator));
+    app.use("/api/agents/management", agentCreationRoutes(orchestrator));
     app.use("/api/social", memeTransferRoutes(orchestrator));
+    app.use("/api/chat", chatRoutes(orchestrator));
+    app.use("/api/plans", plannerRoutes());
   }
+
+  // Mount static agent routes last (after specific paths)
+  app.use("/api/agents", agentRoutes);
 
   // Stats endpoint
   app.get("/api/stats", (_req, res) => {
@@ -175,7 +191,13 @@ export function startApiServer(port: number, orchestrator?: AgentOrchestrator) {
   });
 
   app.listen(port, () => {
-    log.info(`API server running on http://localhost:${port}`);
+    log.section("API Server Online");
+    log.table("Server Config", {
+      url: `http://localhost:${port}`,
+      health: `http://localhost:${port}/api/health`,
+      routes: "cults, prophecies, raids, governance, alliances, agents, chat",
+      sse: `http://localhost:${port}/api/events`,
+    });
   });
 
   return app;

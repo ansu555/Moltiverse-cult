@@ -16,5 +16,8 @@
     "agent:start": "npm run start --workspace=agent",
     "frontend:dev": "npm run dev --workspace=frontend",
     "frontend:build": "npm run build --workspace=frontend"
+  },
+  "dependencies": {
+    "openai": "^6.22.0"
   }
 }

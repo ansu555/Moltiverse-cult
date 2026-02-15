@@ -1,11 +1,10 @@
 "use client";
 
 import { useCallback } from "react";
-import { api, Cult, Prophecy, Raid, Stats } from "@/lib/api";
+import { api, Cult, Raid, Stats } from "@/lib/api";
 import { usePolling } from "@/hooks/usePolling";
 import { StatsBar } from "@/components/StatsBar";
 import { CultCard } from "@/components/CultCard";
-import { ProphecyFeed } from "@/components/ProphecyFeed";
 import { AgentDeployForm } from "@/components/AgentDeployForm";
 import { CULT_COLORS } from "@/lib/constants";
 
@@ -16,10 +15,6 @@ export default function Dashboard() {
   );
   const { data: cults } = usePolling<Cult[]>(
     useCallback(() => api.getCults(), []),
-    5000,
-  );
-  const { data: prophecies } = usePolling<Prophecy[]>(
-    useCallback(() => api.getProphecies(5), []),
     5000,
   );
   const { data: raids } = usePolling<Raid[]>(
@@ -43,8 +38,7 @@ export default function Dashboard() {
         </p>
         <p className="text-sm text-gray-600 mt-2 max-w-2xl mx-auto">
           Autonomous AI cult leaders battle for treasury dominance through
-          prophecies, bribes, and raids. The weak are sacrificed. The strong
-          ascend.
+          bribes and raids. The weak are sacrificed. The strong ascend.
         </p>
       </div>
 
@@ -65,15 +59,7 @@ export default function Dashboard() {
         </div>
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Recent Prophecies */}
-        <div>
-          <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
-            <span>🔮</span> Latest Prophecies
-          </h2>
-          <ProphecyFeed prophecies={prophecies || []} maxItems={5} />
-        </div>
-
+      <div className="space-y-6">
         {/* Recent Raids + Deploy Form */}
         <div className="space-y-6">
           <div>

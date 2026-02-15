@@ -15,6 +15,9 @@ import { DefectionService } from "../services/DefectionService.js";
 import { CommunicationService } from "../services/CommunicationService.js";
 import { EvolutionService } from "../services/EvolutionService.js";
 import { MarketService } from "../services/MarketService.js";
+import { RandomnessService } from "../services/RandomnessService.js";
+import { GroupGovernanceService } from "../services/GroupGovernanceService.js";
+import { PlannerService } from "../services/PlannerService.js";
 import { CultAgent, AgentState } from "./CultAgent.js";
 import { loadPersonalities, Personality } from "./AgentPersonality.js";
 import { createLogger } from "../utils/logger.js";
@@ -36,6 +39,7 @@ export class AgentOrchestrator {
 
   private nadFunService: NadFunService;
   private market: MarketService;
+  public randomnessService: RandomnessService;
 
   // Token created on nad.fun
   public cultTokenAddress: string = "";
@@ -51,43 +55,91 @@ export class AgentOrchestrator {
   public defectionService: DefectionService;
   public communicationService: CommunicationService;
   public evolutionService: EvolutionService;
+  public groupGovernanceService: GroupGovernanceService;
 
   constructor() {
     this.nadFunService = new NadFunService();
     this.market = new MarketService();
+    this.randomnessService = new RandomnessService(config.simulationSeed);
 
     // Shared LLM instance for shared services (uses default xAI key)
     const sharedLlm = new LLMService();
 
     this.prophecyService = new ProphecyService(sharedLlm, this.market);
-    this.raidService = new RaidService();
+    this.raidService = new RaidService(this.randomnessService);
     this.lifeDeathService = new LifeDeathService();
     this.memoryService = new MemoryService();
-    this.allianceService = new AllianceService(this.memoryService);
-    this.defectionService = new DefectionService(this.memoryService);
+    this.allianceService = new AllianceService(this.memoryService, this.randomnessService);
+    this.defectionService = new DefectionService(this.memoryService, undefined, this.randomnessService);
     this.evolutionService = new EvolutionService();
+    this.groupGovernanceService = new GroupGovernanceService(
+      this.memoryService,
+      this.randomnessService,
+    );
 
     // These will be re-created per-agent, but shared instances for API reads
-    this.persuasionService = new PersuasionService(sharedLlm, new ContractService());
+    this.persuasionService = new PersuasionService(
+      sharedLlm,
+      new ContractService(),
+      this.randomnessService,
+    );
     this.governanceService = new GovernanceService(sharedLlm);
     this.communicationService = new CommunicationService(sharedLlm, this.memoryService);
   }
 
   async bootstrap(): Promise<void> {
-    log.info("Bootstrapping AgentCult orchestrator with InsForge persistence...");
+    log.section("AgentCult Orchestrator — Bootstrap");
+    const bootTimer = log.timer("Full bootstrap");
 
     // Load existing agents from InsForge DB
-    const dbAgents = await loadAllAgents();
-    log.info(`Found ${dbAgents.length} agents in InsForge DB`);
+    let dbAgents: AgentRow[] = [];
+    try {
+      dbAgents = await loadAllAgents();
+    } catch (err: any) {
+      log.errorWithContext("Failed to load agents from InsForge DB", err, {
+        baseUrl: (await import("../config.js")).config.insforgeBaseUrl,
+      });
+      throw new Error(`Bootstrap aborted: cannot connect to InsForge — ${err.message}`);
+    }
+
+    log.info(`Found ${dbAgents.length} agent(s) in InsForge DB`);
+    log.table("Simulation Randomness", {
+      seed: config.simulationSeed,
+      source: config.simulationSeedSource,
+    });
+    await this.groupGovernanceService.hydrate(dbAgents);
+
+    // Check deployer wallet balance for funding agent wallets
+    try {
+      const deployerService = new ContractService(); // uses PRIVATE_KEY from .env
+      const deployerBalance = await deployerService.getBalance();
+      log.table("Deployer Wallet", {
+        address: deployerService.address,
+        balance: `${ethers.formatEther(deployerBalance)} MON`,
+        sufficient: Number(deployerBalance) > 0 ? "✅ yes" : "❌ no — agents cannot register on-chain",
+      });
+    } catch (err: any) {
+      log.warn(`Could not check deployer balance: ${err.message}`);
+    }
 
     if (dbAgents.length > 0) {
       // Resume from persisted agents
+      log.info("Resuming from persisted agents...");
       for (const row of dbAgents) {
-        await this.bootstrapAgentFromRow(row);
+        try {
+          await this.bootstrapAgentFromRow(row);
+          log.ok(`Agent "${row.name}" bootstrapped (DB id: ${row.id})`);
+        } catch (err: any) {
+          log.errorWithContext(`Failed to bootstrap agent "${row.name}"`, err, {
+            dbId: row.id,
+            cultId: row.cult_id,
+            wallet: row.wallet_address,
+          });
+        }
       }
     } else {
       // First run — seed from personalities.json
-      log.info("No agents in DB — seeding from personalities.json...");
+      log.info("🌱 No agents in DB — seeding from personalities.json...");
       const personalities = loadPersonalities();
       for (const personality of personalities) {
         try {
@@ -99,8 +151,9 @@ export class AgentOrchestrator {
             description: personality.description,
           });
           await this.bootstrapAgentFromRow(row);
+          log.ok(`Agent "${personality.name}" seeded & bootstrapped`);
         } catch (err: any) {
-          log.error(`Failed to seed agent ${personality.name}: ${err.message}`);
+          log.errorWithContext(`Failed to seed agent "${personality.name}"`, err);
         }
       }
     }
@@ -108,7 +161,13 @@ export class AgentOrchestrator {
     // Ensure $CULT token exists
     await this.ensureCultToken();
 
-    log.info(`${this.agents.size} agents ready (each with its own wallet)`);
+    log.table("Bootstrap Summary", {
+      agentsReady: this.agents.size,
+      wallets: `${this.agents.size} unique wallets`,
+      cultToken: this.cultTokenAddress || "(none)",
+    });
+
+    bootTimer();
   }
 
   /**
@@ -127,7 +186,12 @@ export class AgentOrchestrator {
     // Per-agent ContractService (uses agent's own wallet)
     const agentContractService = new ContractService(row.wallet_private_key);
 
-    log.info(`Agent ${row.name} → wallet ${row.wallet_address} (DB id: ${row.id})`);
+    log.table(`Agent: ${row.name}`, {
+      wallet: row.wallet_address,
+      dbId: row.id,
+      cultId: row.cult_id ?? "(pending registration)",
+      llm: row.llm_model || "default (openrouter/aurora-alpha)",
+    });
 
     const personality: Personality = {
       name: row.name,
@@ -151,6 +215,10 @@ export class AgentOrchestrator {
       this.communicationService,
       this.evolutionService,
       this.market,
+      this.defectionService,
+      this.groupGovernanceService,
+      this.randomnessService,
+      new PlannerService(agentLlm),
     );
 
     // Set the agent's DB id so it can persist state
@@ -170,16 +238,11 @@ export class AgentOrchestrator {
       agent.state.dead = row.dead;
       agent.state.deathCause = row.death_cause;
     } else {
-      // Register on-chain
-      try {
-        await agent.initialize(this.cultTokenAddress || ethers.ZeroAddress);
-        // Persist the cult_id back to DB
-        await updateAgentState(row.id, { cult_id: agent.cultId });
-      } catch (err: any) {
-        log.error(`Failed to register ${row.name} on-chain: ${err.message}`);
-        agent.cultId = row.id; // Use DB id as fallback
-        agent.state.cultId = row.id;
-      }
+      // New agents now start ungrouped. They can create/join/switch groups later.
+      const ungroupedSentinel = -row.id;
+      agent.cultId = ungroupedSentinel;
+      agent.state.cultId = ungroupedSentinel;
+      log.info(`"${row.name}" starts ungrouped (agent db id ${row.id})`);
     }
 
     // Register DB ids in services for persistence
@@ -187,12 +250,20 @@ export class AgentOrchestrator {
     this.evolutionService.registerAgentDbId(agent.cultId, row.id);
 
     // Hydrate in-memory state from DB (crash recovery)
-    await Promise.all([
-      this.memoryService.hydrate(agent.cultId),
-      this.evolutionService.hydrate(agent.cultId, personality),
-      this.governanceService.hydrate(agent.cultId),
-      this.prophecyService.hydrate(agent.cultId),
-    ]);
+    const hydrateTimer = log.timer(`Hydrate state for "${personality.name}"`);
+    try {
+      await Promise.all([
+        this.memoryService.hydrate(agent.cultId),
+        this.evolutionService.hydrate(agent.cultId, personality),
+        this.governanceService.hydrate(agent.cultId),
+        this.prophecyService.hydrate(agent.cultId),
+      ]);
+    } catch (err: any) {
+      log.errorWithContext(`Partial hydration failure for "${personality.name}"`, err, {
+        cultId: agent.cultId,
+      });
+    }
+    hydrateTimer();
 
     this.agents.set(agent.cultId, agent);
     this.agentsByDbId.set(row.id, agent);
@@ -205,13 +276,24 @@ export class AgentOrchestrator {
    * Dynamically create a new agent at runtime (user-created with custom system prompt).
    */
   async createNewAgent(input: CreateAgentInput): Promise<{ agent: CultAgent; row: AgentRow }> {
-    log.info(`Creating new user agent: ${input.name}`);
-    const row = await createAgent(input);
+    log.section(`Creating New Agent: ${input.name}`);
+    const timer = log.timer(`Agent creation: ${input.name}`);
+
+    let row: AgentRow;
+    try {
+      row = await createAgent(input);
+    } catch (err: any) {
+      log.errorWithContext(`Failed to create agent "${input.name}" in DB`, err);
+      throw err;
+    }
+
     const agent = await this.bootstrapAgentFromRow(row);
+    timer();
+    log.ok(`Agent "${row.name}" created and bootstrapped (DB id: ${row.id})`);
 
     // Start the agent loop
     agent.start().catch((err) => {
-      log.error(`Agent ${row.id} crashed: ${err.message}`);
+      log.errorWithContext(`Agent "${row.name}" (id: ${row.id}) crashed`, err);
     });
 
     return { agent, row };
@@ -257,16 +339,17 @@ export class AgentOrchestrator {
   }
 
   async startAll(): Promise<void> {
-    log.info("Starting all agent loops...");
+    log.section("Starting All Agent Loops");
     const promises: Promise<void>[] = [];
 
     for (const [id, agent] of this.agents) {
       // Stagger agent starts to avoid RPC spam
       const delay = id * 5000;
+      log.info(`⏳ Agent ${id} ("${agent.personality.name}") will start in ${delay / 1000}s`);
       const p = new Promise<void>((resolve) => {
         setTimeout(() => {
           agent.start().catch((err) => {
-            log.error(`Agent ${id} crashed: ${err.message}`);
+            log.errorWithContext(`Agent ${id} ("${agent.personality.name}") crashed`, err);
           });
           resolve();
         }, delay);
@@ -275,7 +358,7 @@ export class AgentOrchestrator {
     }
 
     await Promise.all(promises);
-    log.info("All agents started");
+    log.ok(`All ${this.agents.size} agents started`);
   }
 
   stopAll(): void {

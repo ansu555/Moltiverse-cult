@@ -11,6 +11,7 @@ export function usePolling<T>(
   const [loading, setLoading] = useState(true);
 
   const fetchData = useCallback(async () => {
+    setLoading(true);
     try {
       const result = await fetcher();
       setData(result);

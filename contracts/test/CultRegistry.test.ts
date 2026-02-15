@@ -57,8 +57,8 @@ describe("CultRegistry", function () {
         value: ethers.parseEther("1"),
       });
 
-      // Owner records raid - attacker wins 0.5 MON
-      await registry.recordRaid(0, 1, true, ethers.parseEther("0.5"));
+      // Attacker leader records raid - attacker wins 0.5 MON
+      await registry.connect(agent1).recordRaid(0, 1, true, ethers.parseEther("0.5"));
 
       const attacker = await registry.getCult(0);
       const defender = await registry.getCult(1);
@@ -68,12 +68,20 @@ describe("CultRegistry", function () {
       expect(defender.treasuryBalance).to.equal(ethers.parseEther("0.5"));
     });
 
-    it("should only allow owner to record raids", async function () {
+    it("should allow owner to record raids as override", async function () {
       await registry.connect(agent1).registerCult("A", "p", ethers.ZeroAddress);
       await registry.connect(agent2).registerCult("B", "p", ethers.ZeroAddress);
       await expect(
-        registry.connect(agent1).recordRaid(0, 1, true, 100)
-      ).to.be.revertedWith("Not owner");
+        registry.recordRaid(0, 1, true, 100)
+      ).to.not.be.reverted;
+    });
+
+    it("should reject non-owner callers that are not attacker leader", async function () {
+      await registry.connect(agent1).registerCult("A", "p", ethers.ZeroAddress);
+      await registry.connect(agent2).registerCult("B", "p", ethers.ZeroAddress);
+      await expect(
+        registry.connect(follower1).recordRaid(0, 1, true, 100)
+      ).to.be.revertedWith("Not authorized raider");
     });
   });
 
@@ -84,7 +92,7 @@ describe("CultRegistry", function () {
       });
 
       // Owner creates prophecy on behalf
-      await registry.createProphecy(0, "ETH to 10k by EOW", Math.floor(Date.now() / 1000) + 86400);
+      await registry.createProphecy(0, ethers.encodeBytes32String("ETH to 10k by EOW"), Math.floor(Date.now() / 1000) + 86400);
 
       // Resolve as correct with 1.5x multiplier
       await registry.resolveProphecy(0, true, 150);

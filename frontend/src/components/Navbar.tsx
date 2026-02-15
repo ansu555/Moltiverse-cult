@@ -10,7 +10,12 @@ const links = [
   { href: "/arena", label: "Raid Arena", icon: "⚔️" },
   { href: "/governance", label: "Governance", icon: "🏛️" },
   { href: "/alliances", label: "Alliances", icon: "🤝" },
-  { href: "/prophecies", label: "Prophecies", icon: "🔮" },
+  // PROPHECY_DISABLED_START
+  // { href: "/prophecies", label: "Prophecies", icon: "🔮" },
+  // PROPHECY_DISABLED_END
+  { href: "/chat", label: "Chat", icon: "💬" },
+  { href: "/deploy", label: "Deploy", icon: "🤖" },
+  { href: "/faucet", label: "Faucet", icon: "🚰" },
 ];
 
 export function Navbar() {

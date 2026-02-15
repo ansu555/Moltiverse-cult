@@ -2,15 +2,13 @@
 
 import { useCallback } from "react";
 import { useParams } from "next/navigation";
-import { api, Cult, Prophecy, Raid } from "@/lib/api";
+import { api, Cult, Raid } from "@/lib/api";
 import { usePolling } from "@/hooks/usePolling";
-import { ProphecyFeed } from "@/components/ProphecyFeed";
 import { StakingPanel } from "@/components/StakingPanel";
 import { TreasuryChart } from "@/components/TreasuryChart";
 import { CULT_COLORS, CULT_ICONS } from "@/lib/constants";
 
 interface CultDetail extends Cult {
-  prophecies: Prophecy[];
   raids: Raid[];
 }
 
@@ -77,7 +75,6 @@ export default function CultDetailPage() {
           <StatBlock
             label="Win Rate"
             value={`${winRate}%`}
-            color={`text-[${color}]`}
           />
         </div>
 
@@ -115,14 +112,15 @@ export default function CultDetailPage() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Prophecies */}
-        <div>
+        {/* PROPHECY_DISABLED_START */}
+        {/* <div>
           <h2 className="text-xl font-bold mb-4">🔮 Prophecies</h2>
           <ProphecyFeed prophecies={cult.prophecies || []} maxItems={10} />
-        </div>
+        </div> */}
+        {/* PROPHECY_DISABLED_END */}
 
         {/* Raid History */}
-        <div>
+        <div className="lg:col-span-2">
           <h2 className="text-xl font-bold mb-4">⚔️ Raid History</h2>
           <div className="space-y-2">
             {(cult.raids || []).map((raid) => {

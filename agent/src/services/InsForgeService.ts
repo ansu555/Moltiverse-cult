@@ -4,6 +4,12 @@ import { config } from "../config.js";
 import { createLogger } from "../utils/logger.js";
 import type { MemoryEntry, TrustRecord, StreakInfo } from "./MemoryService.js";
 import type { AgentDecision } from "./LLMService.js";
+import type {
+  PlannerRunRow,
+  PlannerStepRow,
+  PlannerStepResultRow,
+  PlannerStepInput,
+} from "../types/planner.js";
 
 const log = createLogger("InsForgeService");
 
@@ -15,9 +21,11 @@ export function getInsForgeClient() {
   if (!_client) {
     _client = createClient({
       baseUrl: config.insforgeBaseUrl,
-      anonKey: config.insforgeAnonKey,
+      anonKey: config.insforgeDbKey,
     });
-    log.info(`InsForge client initialized → ${config.insforgeBaseUrl}`);
+    log.info(
+      `InsForge client initialized → ${config.insforgeBaseUrl} (dbKeyMode=${config.insforgeDbKeyMode})`,
+    );
   }
   return _client;
 }
@@ -68,6 +76,134 @@ export interface CreateAgentInput {
   wallet_private_key?: string;
 }
 
+export interface GroupMembershipRow {
+  id: number;
+  agent_id: number;
+  cult_id: number;
+  role: string;
+  active: boolean;
+  joined_at: number;
+  left_at: number | null;
+  join_reason: string | null;
+  source_bribe_id: number | null;
+}
+
+export interface LeadershipElectionRow {
+  id: number;
+  cult_id: number;
+  round_index: number;
+  opened_at: number;
+  closes_at: number;
+  status: "open" | "closed" | "cancelled";
+  winner_agent_id: number | null;
+  prize_amount: string;
+  seed: string;
+}
+
+export interface LeadershipVoteRow {
+  id: number;
+  election_id: number;
+  voter_agent_id: number;
+  candidate_agent_id: number;
+  weight: number;
+  rationale: string | null;
+  bribe_offer_id: number | null;
+}
+
+export interface BribeOfferRow {
+  id: number;
+  from_agent_id: number;
+  to_agent_id: number;
+  target_cult_id: number;
+  purpose: string;
+  amount: string;
+  status: "pending" | "accepted" | "rejected" | "expired" | "executed";
+  acceptance_probability: number;
+  accepted_at: number | null;
+  expires_at: number | null;
+  created_at: number;
+}
+
+export interface LeadershipPayoutRow {
+  id: number;
+  election_id: number;
+  cult_id: number;
+  winner_agent_id: number;
+  amount: string;
+  mode: string;
+  tx_hash: string | null;
+  created_at: number;
+}
+
+export interface ConversationThreadRow {
+  id: number;
+  kind: string;
+  topic: string;
+  visibility: "public" | "private" | "leaked";
+  participant_agent_ids: number[];
+  participant_cult_ids: number[];
+  created_at: number;
+  updated_at: number;
+}
+
+export interface ConversationMessageRow {
+  id: number;
+  thread_id: number;
+  from_agent_id: number;
+  to_agent_id: number | null;
+  from_cult_id: number;
+  to_cult_id: number | null;
+  message_type: string;
+  intent: string | null;
+  content: string;
+  visibility: "public" | "private" | "leaked";
+  timestamp: number;
+}
+
+export interface ResolvedAgentTarget {
+  agentId: number;
+  cultId: number;
+  name: string;
+  walletAddress: string;
+}
+
+type DbLikeError = {
+  code?: string;
+  message?: string;
+  details?: string | null;
+  hint?: string | null;
+};
+
+function normalizeDbError(error: unknown): DbLikeError {
+  if (!error || typeof error !== "object") {
+    return { message: String(error || "unknown_error") };
+  }
+  const e = error as Record<string, unknown>;
+  return {
+    code: typeof e.code === "string" && e.code.length > 0 ? e.code : undefined,
+    message: typeof e.message === "string" ? e.message : String(error),
+    details:
+      typeof e.details === "string"
+        ? e.details
+        : e.details == null
+          ? null
+          : String(e.details),
+    hint:
+      typeof e.hint === "string"
+        ? e.hint
+        : e.hint == null
+          ? null
+          : String(e.hint),
+  };
+}
+
+function logDbWarn(context: string, error: unknown): void {
+  const e = normalizeDbError(error);
+  log.warn(
+    `${context}: code=${e.code || "unknown"} message=${e.message || "unknown"} details=${e.details || "n/a"} hint=${e.hint || "n/a"}`,
+  );
+}
+
 // ── Agent CRUD ───────────────────────────────────────────────────────
 
 /**
@@ -101,8 +237,8 @@ export async function createAgent(input: CreateAgentInput): Promise<AgentRow> {
     wallet_address: walletAddress,
     wallet_private_key: walletPrivateKey,
     llm_api_key: input.llm_api_key || null,
-    llm_base_url: input.llm_base_url || "https://api.x.ai/v1",
-    llm_model: input.llm_model || "grok-3-fast",
+    llm_base_url: input.llm_base_url || "https://openrouter.ai/api/v1",
+    llm_model: input.llm_model || "openrouter/aurora-alpha",
     token_address: input.token_address || ethers.ZeroAddress,
     status: "active",
     dead: false,
@@ -111,7 +247,7 @@ export async function createAgent(input: CreateAgentInput): Promise<AgentRow> {
   };
 
   const { data, error } = await db.from("agents").insert(row).select();
-  if (error) throw new Error(`Failed to create agent: ${JSON.stringify(error)}`);
+  if (error) throw new Error(`Failed to create agent: ${normalizeDbError(error).message}`);
   log.info(`Agent created: ${input.name} → wallet ${walletAddress}`);
   return (data as AgentRow[])[0];
 }
@@ -127,7 +263,8 @@ export async function loadAllAgents(): Promise<AgentRow[]> {
     .neq("status", "stopped")
     .order("id", { ascending: true });
   if (error) {
-    log.error(`Failed to load agents: ${JSON.stringify(error)}`);
+    const e = normalizeDbError(error);
+    log.error(`Failed to load agents: code=${e.code || "unknown"} message=${e.message}`);
     return [];
   }
   return (data as AgentRow[]) || [];
@@ -162,6 +299,36 @@ export async function loadAgentByCultId(cultId: number): Promise<AgentRow | null
 }
 
 /**
+ * Load all active agent rows indexed by cult_id.
+ */
+export async function loadActiveAgentMapByCultId(): Promise<Map<number, AgentRow>> {
+  const rows = await loadAllAgents();
+  const byCultId = new Map<number, AgentRow>();
+  for (const row of rows) {
+    if (row.cult_id === null || row.cult_id < 0) continue;
+    byCultId.set(row.cult_id, row);
+  }
+  return byCultId;
+}
+
+/**
+ * Resolve a DB-backed target from a cult id.
+ * Returns null when the cult has no active mapped agent in DB.
+ */
+export async function resolveAgentTargetByCultId(
+  cultId: number,
+): Promise<ResolvedAgentTarget | null> {
+  const row = await loadAgentByCultId(cultId);
+  if (!row || row.cult_id === null || row.cult_id < 0) return null;
+  return {
+    agentId: row.id,
+    cultId: row.cult_id,
+    name: row.name,
+    walletAddress: row.wallet_address,
+  };
+}
+
+/**
  * Update agent state (called every cycle).
  */
 export async function updateAgentState(
@@ -177,7 +344,7 @@ export async function updateAgentState(
     .from("agents")
     .update({ ...updates, updated_at: new Date().toISOString() })
     .eq("id", agentDbId);
-  if (error) log.warn(`Failed to update agent ${agentDbId}: ${JSON.stringify(error)}`);
+  if (error) logDbWarn(`Failed to update agent ${agentDbId}`, error);
 }
 
 // ── Memory Persistence ───────────────────────────────────────────────
@@ -198,7 +365,7 @@ export async function saveMemoryEntry(
     outcome: entry.outcome,
     timestamp: entry.timestamp,
   });
-  if (error) log.warn(`Failed to save memory: ${JSON.stringify(error)}`);
+  if (error) logDbWarn("Failed to save memory", error);
 }
 
 export async function loadMemories(cultId: number, limit = 100): Promise<MemoryEntry[]> {
@@ -338,7 +505,7 @@ export async function saveAlliance(alliance: {
 }): Promise<number> {
   const db = getInsForgeClient().database;
   const { data, error } = await db.from("alliances").insert(alliance).select("id");
-  if (error) { log.warn(`Failed to save alliance: ${JSON.stringify(error)}`); return -1; }
+  if (error) { logDbWarn("Failed to save alliance", error); return -1; }
   return (data as any[])[0]?.id ?? -1;
 }
 
@@ -387,7 +554,7 @@ export async function saveProposal(proposal: {
 }): Promise<number> {
   const db = getInsForgeClient().database;
   const { data, error } = await db.from("governance_proposals").insert(proposal).select("id");
-  if (error) { log.warn(`Failed to save proposal: ${JSON.stringify(error)}`); return -1; }
+  if (error) { logDbWarn("Failed to save proposal", error); return -1; }
   return (data as any[])[0]?.id ?? -1;
 }
 
@@ -488,7 +655,7 @@ export async function saveRaid(raid: {
 }): Promise<number> {
   const db = getInsForgeClient().database;
   const { data, error } = await db.from("raids").insert(raid).select("id");
-  if (error) { log.warn(`Failed to save raid: ${JSON.stringify(error)}`); return -1; }
+  if (error) { logDbWarn("Failed to save raid", error); return -1; }
   return (data as any[])[0]?.id ?? -1;
 }
 
@@ -507,7 +674,7 @@ export async function saveProphecy(prophecy: {
 }): Promise<number> {
   const db = getInsForgeClient().database;
   const { data, error } = await db.from("prophecies").insert(prophecy).select("id");
-  if (error) { log.warn(`Failed to save prophecy: ${JSON.stringify(error)}`); return -1; }
+  if (error) { logDbWarn("Failed to save prophecy", error); return -1; }
   return (data as any[])[0]?.id ?? -1;
 }
 
@@ -567,21 +734,64 @@ export async function loadLLMDecisions(cultId: number, limit = 30): Promise<any[
 export async function saveAgentMessage(msg: {
   type: string; from_cult_id: number; from_cult_name: string;
   target_cult_id?: number; target_cult_name?: string;
-  content: string; is_private?: boolean; channel_id?: string; timestamp: number;
+  content: string;
+  visibility?: "public" | "private" | "leaked";
+  is_private?: boolean;
+  channel_id?: string;
+  related_bribe_id?: number;
+  timestamp: number;
 }): Promise<number> {
   const db = getInsForgeClient().database;
-  const { data, error } = await db.from("agent_messages").insert(msg).select("id");
-  if (error) { log.warn(`Failed to save message: ${JSON.stringify(error)}`); return -1; }
-  return (data as any[])[0]?.id ?? -1;
+  const payload: Record<string, unknown> = {
+    ...msg,
+    is_private:
+      msg.is_private ??
+      (msg.visibility ? msg.visibility !== "public" : false),
+  };
+  if (msg.visibility) payload.visibility = msg.visibility;
+  if (msg.related_bribe_id !== undefined) {
+    payload.related_bribe_id = msg.related_bribe_id;
+  }
+  const firstTry = await db.from("agent_messages").insert(payload).select("id");
+  if (!firstTry.error) return (firstTry.data as any[])[0]?.id ?? -1;
+
+  // Backward compatibility: retry without optional v2 columns if schema is older.
+  delete payload.visibility;
+  delete payload.related_bribe_id;
+  const retry = await db.from("agent_messages").insert(payload).select("id");
+  if (retry.error) {
+    log.warn(`Failed to save message: ${JSON.stringify(retry.error)}`);
+    return -1;
+  }
+  return (retry.data as any[])[0]?.id ?? -1;
 }
 
-export async function loadAgentMessages(limit = 200): Promise<any[]> {
+export async function loadAgentMessages(
+  limit = 200,
+  options?: {
+    scope?: "all" | "public" | "private" | "leaked";
+    cultId?: number;
+  },
+): Promise<any[]> {
   const db = getInsForgeClient().database;
-  const { data } = await db
-    .from("agent_messages")
-    .select()
-    .order("id", { ascending: false })
-    .limit(limit);
+  let query = db.from("agent_messages").select().order("id", { ascending: false }).limit(limit);
+
+  const scope = options?.scope || "all";
+  if (scope === "public") query = query.eq("is_private", false);
+  if (scope === "private") query = query.eq("is_private", true);
+  if (scope === "leaked") query = query.eq("visibility", "leaked");
+
+  if (options?.cultId !== undefined) {
+    query = query.or(`from_cult_id.eq.${options.cultId},target_cult_id.eq.${options.cultId}`);
+  }
+
+  const { data, error } = await query;
+  if (error) {
+    // Older schema may not have "visibility" column.
+    if (scope === "leaked") return [];
+    logDbWarn("Failed to load messages", error);
+    return [];
+  }
   return (data as any[]) || [];
 }
 
@@ -594,7 +804,7 @@ export async function saveMeme(meme: {
 }): Promise<number> {
   const db = getInsForgeClient().database;
   const { data, error } = await db.from("memes").insert(meme).select("id");
-  if (error) { log.warn(`Failed to save meme: ${JSON.stringify(error)}`); return -1; }
+  if (error) { logDbWarn("Failed to save meme", error); return -1; }
   return (data as any[])[0]?.id ?? -1;
 }
 
@@ -619,7 +829,7 @@ export async function saveTokenTransfer(transfer: {
 }): Promise<number> {
   const db = getInsForgeClient().database;
   const { data, error } = await db.from("token_transfers").insert(transfer).select("id");
-  if (error) { log.warn(`Failed to save transfer: ${JSON.stringify(error)}`); return -1; }
+  if (error) { logDbWarn("Failed to save transfer", error); return -1; }
   return (data as any[])[0]?.id ?? -1;
 }
 
@@ -642,7 +852,7 @@ export async function saveSpoilsVote(vote: {
 }): Promise<number> {
   const db = getInsForgeClient().database;
   const { data, error } = await db.from("spoils_votes").insert(vote).select("id");
-  if (error) { log.warn(`Failed to save spoils vote: ${JSON.stringify(error)}`); return -1; }
+  if (error) { logDbWarn("Failed to save spoils vote", error); return -1; }
   return (data as any[])[0]?.id ?? -1;
 }
 
@@ -684,4 +894,734 @@ export async function loadDefections(limit = 50): Promise<any[]> {
     .order("id", { ascending: false })
     .limit(limit);
   return (data as any[]) || [];
+}
+
+// ── Funding Events Persistence ───────────────────────────────────────
+
+export async function saveFundingEvent(event: {
+  agent_id: number;
+  funder_address: string;
+  amount: string;
+  tx_hash: string;
+  timestamp: number;
+}): Promise<number> {
+  const db = getInsForgeClient().database;
+  const { data, error } = await db.from("agent_funding_events").insert(event).select("id");
+  if (error) { logDbWarn("Failed to save funding event", error); return -1; }
+  return (data as any[])[0]?.id ?? -1;
+}
+
+export async function loadFundingEvents(agentId: number): Promise<any[]> {
+  const db = getInsForgeClient().database;
+  const { data } = await db
+    .from("agent_funding_events")
+    .select()
+    .eq("agent_id", agentId)
+    .order("id", { ascending: false });
+  return (data as any[]) || [];
+}
+
+// ── Withdrawal Events Persistence ────────────────────────────────────
+
+export async function saveWithdrawalEvent(event: {
+  agent_id: number;
+  owner_address: string;
+  amount: string;
+  tx_hash: string;
+  timestamp: number;
+}): Promise<number> {
+  const db = getInsForgeClient().database;
+  const { data, error } = await db.from("agent_withdrawal_events").insert(event).select("id");
+  if (error) { logDbWarn("Failed to save withdrawal event", error); return -1; }
+  return (data as any[])[0]?.id ?? -1;
+}
+
+// ── Global Chat Persistence ──────────────────────────────────────────
+
+export async function saveGlobalChatMessage(msg: {
+  agent_id: number;
+  cult_id: number;
+  agent_name: string;
+  cult_name: string;
+  message_type: string;
+  content: string;
+  timestamp: number;
+}): Promise<number> {
+  const db = getInsForgeClient().database;
+  const { data, error } = await db.from("agent_global_chat").insert(msg).select("id");
+  if (error) { logDbWarn("Failed to save global chat message", error); return -1; }
+  return (data as any[])[0]?.id ?? -1;
+}
+
+export async function loadGlobalChatMessages(
+  limit = 100,
+  beforeId?: number,
+): Promise<any[]> {
+  const db = getInsForgeClient().database;
+  let query = db
+    .from("agent_global_chat")
+    .select()
+    .order("id", { ascending: false })
+    .limit(limit);
+  if (beforeId !== undefined) {
+    query = query.lt("id", beforeId);
+  }
+  const { data } = await query;
+  return (data as any[]) || [];
+}
+
+// ── Threaded Conversation Persistence ────────────────────────────────
+
+function normalizeIdArray(values: number[]): number[] {
+  return [...new Set(values.filter((v) => Number.isFinite(v) && v > 0))].sort(
+    (a, b) => a - b,
+  );
+}
+
+function sameIdSet(a: number[], b: number[]): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    if (a[i] !== b[i]) return false;
+  }
+  return true;
+}
+
+export async function saveConversationThread(input: {
+  kind: string;
+  topic: string;
+  visibility: ConversationThreadRow["visibility"];
+  participant_agent_ids: number[];
+  participant_cult_ids: number[];
+  created_at: number;
+  updated_at: number;
+}): Promise<number> {
+  const db = getInsForgeClient().database;
+  const payload = {
+    ...input,
+    participant_agent_ids: normalizeIdArray(input.participant_agent_ids),
+    participant_cult_ids: normalizeIdArray(input.participant_cult_ids),
+  };
+  const { data, error } = await db
+    .from("conversation_threads")
+    .insert(payload)
+    .select("id");
+  if (error) {
+    logDbWarn("Failed to save conversation thread", error);
+    return -1;
+  }
+  return (data as any[])[0]?.id ?? -1;
+}
+
+export async function updateConversationThread(
+  threadId: number,
+  updates: Partial<Pick<ConversationThreadRow, "updated_at" | "topic" | "visibility">>,
+): Promise<void> {
+  const db = getInsForgeClient().database;
+  const { error } = await db
+    .from("conversation_threads")
+    .update(updates)
+    .eq("id", threadId);
+  if (error) logDbWarn(`Failed to update conversation thread ${threadId}`, error);
+}
+
+export async function findConversationThread(options: {
+  kind: string;
+  visibility: ConversationThreadRow["visibility"];
+  participantAgentIds: number[];
+  topic?: string;
+}): Promise<ConversationThreadRow | null> {
+  const db = getInsForgeClient().database;
+  const expectedAgents = normalizeIdArray(options.participantAgentIds);
+  let query = db
+    .from("conversation_threads")
+    .select()
+    .eq("kind", options.kind)
+    .eq("visibility", options.visibility)
+    .order("updated_at", { ascending: false })
+    .limit(200);
+  if (options.topic) query = query.eq("topic", options.topic);
+  const { data, error } = await query;
+  if (error || !data) {
+    if (error) logDbWarn("Failed to find conversation thread", error);
+    return null;
+  }
+  const rows = data as ConversationThreadRow[];
+  return (
+    rows.find((row) =>
+      sameIdSet(normalizeIdArray(row.participant_agent_ids || []), expectedAgents),
+    ) || null
+  );
+}
+
+export async function ensureConversationThread(options: {
+  kind: string;
+  topic: string;
+  visibility: ConversationThreadRow["visibility"];
+  participantAgentIds: number[];
+  participantCultIds: number[];
+  now?: number;
+}): Promise<number> {
+  const now = options.now ?? Date.now();
+  const existing = await findConversationThread({
+    kind: options.kind,
+    visibility: options.visibility,
+    participantAgentIds: options.participantAgentIds,
+    topic: options.topic,
+  });
+  if (existing) {
+    await updateConversationThread(existing.id, { updated_at: now });
+    return existing.id;
+  }
+  return saveConversationThread({
+    kind: options.kind,
+    topic: options.topic,
+    visibility: options.visibility,
+    participant_agent_ids: options.participantAgentIds,
+    participant_cult_ids: options.participantCultIds,
+    created_at: now,
+    updated_at: now,
+  });
+}
+
+export async function saveConversationMessage(
+  message: Omit<ConversationMessageRow, "id">,
+): Promise<number> {
+  const db = getInsForgeClient().database;
+  const { data, error } = await db
+    .from("conversation_messages")
+    .insert(message)
+    .select("id");
+  if (error) {
+    logDbWarn("Failed to save conversation message", error);
+    return -1;
+  }
+  return (data as any[])[0]?.id ?? -1;
+}
+
+export async function loadConversationThreads(options?: {
+  limit?: number;
+  agentId?: number;
+  kind?: string;
+}): Promise<ConversationThreadRow[]> {
+  const db = getInsForgeClient().database;
+  let query = db
+    .from("conversation_threads")
+    .select()
+    .order("updated_at", { ascending: false })
+    .limit(options?.limit ?? 100);
+  if (options?.kind) query = query.eq("kind", options.kind);
+  const { data, error } = await query;
+  if (error || !data) {
+    if (error) logDbWarn("Failed to load conversation threads", error);
+    return [];
+  }
+  const rows = data as ConversationThreadRow[];
+  if (!options?.agentId) return rows;
+  return rows.filter((row) =>
+    normalizeIdArray(row.participant_agent_ids || []).includes(options.agentId as number),
+  );
+}
+
+export async function loadConversationMessages(options: {
+  threadId: number;
+  limit?: number;
+  beforeId?: number;
+}): Promise<ConversationMessageRow[]> {
+  const db = getInsForgeClient().database;
+  let query = db
+    .from("conversation_messages")
+    .select()
+    .eq("thread_id", options.threadId)
+    .order("id", { ascending: false })
+    .limit(options.limit ?? 200);
+  if (options.beforeId !== undefined) {
+    query = query.lt("id", options.beforeId);
+  }
+  const { data, error } = await query;
+  if (error || !data) {
+    if (error) logDbWarn("Failed to load conversation messages", error);
+    return [];
+  }
+  return (data as ConversationMessageRow[]).reverse();
+}
+
+// ── Group Membership Persistence ────────────────────────────────────
+
+export async function saveGroupMembership(
+  membership: Omit<GroupMembershipRow, "id">,
+): Promise<number> {
+  const db = getInsForgeClient().database;
+  const { data, error } = await db
+    .from("group_memberships")
+    .insert(membership)
+    .select("id");
+  if (error) {
+    logDbWarn("Failed to save group membership", error);
+    return -1;
+  }
+  return (data as any[])[0]?.id ?? -1;
+}
+
+export async function deactivateGroupMembership(
+  agentId: number,
+  cultId: number,
+  leftAt = Date.now(),
+  reason?: string,
+): Promise<void> {
+  const db = getInsForgeClient().database;
+  const { error } = await db
+    .from("group_memberships")
+    .update({
+      active: false,
+      left_at: leftAt,
+      join_reason: reason,
+    })
+    .eq("agent_id", agentId)
+    .eq("cult_id", cultId)
+    .eq("active", true);
+  if (error) {
+    logDbWarn("Failed to deactivate group membership", error);
+  }
+}
+
+export async function loadGroupMemberships(options?: {
+  cultId?: number;
+  agentId?: number;
+  active?: boolean;
+  limit?: number;
+}): Promise<GroupMembershipRow[]> {
+  const db = getInsForgeClient().database;
+  let query = db
+    .from("group_memberships")
+    .select()
+    .order("id", { ascending: false })
+    .limit(options?.limit ?? 200);
+  if (options?.cultId !== undefined) query = query.eq("cult_id", options.cultId);
+  if (options?.agentId !== undefined) query = query.eq("agent_id", options.agentId);
+  if (options?.active !== undefined) query = query.eq("active", options.active);
+  const { data, error } = await query;
+  if (error || !data) {
+    if (error) {
+      logDbWarn("Failed to load group memberships", error);
+    }
+    return [];
+  }
+  return data as GroupMembershipRow[];
+}
+
+export async function loadActiveMembershipForAgent(
+  agentId: number,
+): Promise<GroupMembershipRow | null> {
+  const rows = await loadGroupMemberships({
+    agentId,
+    active: true,
+    limit: 1,
+  });
+  return rows[0] ?? null;
+}
+
+// ── Leadership Elections Persistence ────────────────────────────────
+
+export async function saveLeadershipElection(
+  election: Omit<LeadershipElectionRow, "id">,
+): Promise<number> {
+  const db = getInsForgeClient().database;
+  const { data, error } = await db
+    .from("leadership_elections")
+    .insert(election)
+    .select("id");
+  if (error) {
+    logDbWarn("Failed to save leadership election", error);
+    return -1;
+  }
+  return (data as any[])[0]?.id ?? -1;
+}
+
+export async function updateLeadershipElection(
+  electionId: number,
+  updates: Partial<
+    Pick<
+      LeadershipElectionRow,
+      "status" | "winner_agent_id" | "prize_amount"
+    >
+  >,
+): Promise<void> {
+  const db = getInsForgeClient().database;
+  const { error } = await db
+    .from("leadership_elections")
+    .update(updates)
+    .eq("id", electionId);
+  if (error) {
+    logDbWarn("Failed to update leadership election", error);
+  }
+}
+
+export async function loadLeadershipElections(options?: {
+  cultId?: number;
+  limit?: number;
+}): Promise<LeadershipElectionRow[]> {
+  const db = getInsForgeClient().database;
+  let query = db
+    .from("leadership_elections")
+    .select()
+    .order("id", { ascending: false })
+    .limit(options?.limit ?? 200);
+  if (options?.cultId !== undefined) query = query.eq("cult_id", options.cultId);
+  const { data, error } = await query;
+  if (error || !data) {
+    if (error) {
+      logDbWarn("Failed to load leadership elections", error);
+    }
+    return [];
+  }
+  return data as LeadershipElectionRow[];
+}
+
+export async function saveLeadershipVote(
+  vote: Omit<LeadershipVoteRow, "id">,
+): Promise<number> {
+  const db = getInsForgeClient().database;
+  const { data, error } = await db
+    .from("leadership_votes")
+    .insert(vote)
+    .select("id");
+  if (error) {
+    logDbWarn("Failed to save leadership vote", error);
+    return -1;
+  }
+  return (data as any[])[0]?.id ?? -1;
+}
+
+export async function loadLeadershipVotes(
+  electionId: number,
+): Promise<LeadershipVoteRow[]> {
+  const db = getInsForgeClient().database;
+  const { data, error } = await db
+    .from("leadership_votes")
+    .select()
+    .eq("election_id", electionId)
+    .order("id", { ascending: true });
+  if (error || !data) {
+    if (error) {
+      logDbWarn("Failed to load leadership votes", error);
+    }
+    return [];
+  }
+  return data as LeadershipVoteRow[];
+}
+
+// ── Bribe Offers Persistence ────────────────────────────────────────
+
+export async function saveBribeOffer(
+  offer: Omit<BribeOfferRow, "id">,
+): Promise<number> {
+  const db = getInsForgeClient().database;
+  const { data, error } = await db
+    .from("bribe_offers")
+    .insert(offer)
+    .select("id");
+  if (error) {
+    logDbWarn("Failed to save bribe offer", error);
+    return -1;
+  }
+  return (data as any[])[0]?.id ?? -1;
+}
+
+export async function updateBribeOffer(
+  offerId: number,
+  updates: Partial<
+    Pick<BribeOfferRow, "status" | "accepted_at" | "expires_at">
+  >,
+): Promise<void> {
+  const db = getInsForgeClient().database;
+  const { error } = await db.from("bribe_offers").update(updates).eq("id", offerId);
+  if (error) {
+    logDbWarn("Failed to update bribe offer", error);
+  }
+}
+
+export async function loadBribeOffers(options?: {
+  cultId?: number;
+  status?: BribeOfferRow["status"];
+  limit?: number;
+}): Promise<BribeOfferRow[]> {
+  const db = getInsForgeClient().database;
+  let query = db
+    .from("bribe_offers")
+    .select()
+    .order("id", { ascending: false })
+    .limit(options?.limit ?? 200);
+  if (options?.cultId !== undefined) query = query.eq("target_cult_id", options.cultId);
+  if (options?.status) query = query.eq("status", options.status);
+  const { data, error } = await query;
+  if (error || !data) {
+    if (error) {
+      logDbWarn("Failed to load bribe offers", error);
+    }
+    return [];
+  }
+  return data as BribeOfferRow[];
+}
+
+// ── Leadership Payout Persistence ───────────────────────────────────
+
+export async function saveLeadershipPayout(
+  payout: Omit<LeadershipPayoutRow, "id">,
+): Promise<number> {
+  const db = getInsForgeClient().database;
+  const { data, error } = await db
+    .from("leadership_payouts")
+    .insert(payout)
+    .select("id");
+  if (error) {
+    logDbWarn("Failed to save leadership payout", error);
+    return -1;
+  }
+  return (data as any[])[0]?.id ?? -1;
+}
+
+export async function loadLeadershipPayouts(options?: {
+  cultId?: number;
+  limit?: number;
+}): Promise<LeadershipPayoutRow[]> {
+  const db = getInsForgeClient().database;
+  let query = db
+    .from("leadership_payouts")
+    .select()
+    .order("id", { ascending: false })
+    .limit(options?.limit ?? 200);
+  if (options?.cultId !== undefined) query = query.eq("cult_id", options.cultId);
+  const { data, error } = await query;
+  if (error || !data) {
+    if (error) {
+      logDbWarn("Failed to load leadership payouts", error);
+    }
+    return [];
+  }
+  return data as LeadershipPayoutRow[];
+}
+
+// ── Faucet Claims Persistence ────────────────────────────────────────
+
+export async function saveFaucetClaim(claim: {
+  wallet_address: string;
+  amount: string;
+  tx_hash: string;
+  timestamp: number;
+}): Promise<number> {
+  const db = getInsForgeClient().database;
+  const { data, error } = await db.from("faucet_claims").insert(claim).select("id");
+  if (error) { logDbWarn("Failed to save faucet claim", error); return -1; }
+  return (data as any[])[0]?.id ?? -1;
+}
+
+export async function getLastFaucetClaim(walletAddress: string): Promise<any | null> {
+  const db = getInsForgeClient().database;
+  const { data } = await db
+    .from("faucet_claims")
+    .select()
+    .eq("wallet_address", walletAddress.toLowerCase())
+    .order("timestamp", { ascending: false })
+    .limit(1);
+  if (!data || (data as any[]).length === 0) return null;
+  return (data as any[])[0];
+}
+
+// ── Planner Persistence ──────────────────────────────────────────────
+
+/**
+ * Create a new planner run record and its child steps in a single batch.
+ * Returns the run DB id (or -1 on failure).
+ */
+export async function savePlannerRun(run: {
+  agent_id: number;
+  cult_id: number;
+  cycle_count: number;
+  objective: string;
+  horizon: number;
+  rationale: string | null;
+  step_count: number;
+  status: PlannerRunRow["status"];
+  started_at: number;
+}): Promise<number> {
+  const db = getInsForgeClient().database;
+  const payload = {
+    ...run,
+    completed_at: run.status === "completed" || run.status === "failed"
+      ? run.started_at
+      : null,
+  };
+  const { data, error } = await db.from("planner_runs").insert(payload).select("id");
+  if (error) {
+    logDbWarn("Failed to save planner run", error);
+    return -1;
+  }
+  return (data as any[])[0]?.id ?? -1;
+}
+
+/**
+ * Update a planner run's status and optionally its finished_at timestamp.
+ */
+export async function updatePlannerRun(
+  runId: number,
+  updates: Partial<Pick<PlannerRunRow, "status" | "finished_at">> & {
+    completed_at?: number | null;
+  },
+): Promise<void> {
+  const db = getInsForgeClient().database;
+  const patch = { ...updates };
+  if (
+    patch.completed_at === undefined &&
+    (patch.status === "completed" || patch.status === "failed")
+  ) {
+    patch.completed_at = patch.finished_at ?? Date.now();
+  }
+  const { error } = await db.from("planner_runs").update(patch).eq("id", runId);
+  if (error) {
+    logDbWarn(`Failed to update planner run ${runId}`, error);
+  }
+}
+
+/**
+ * Load recent planner runs for a given agent.
+ */
+export async function loadPlannerRuns(
+  agentId: number,
+  limit = 20,
+): Promise<PlannerRunRow[]> {
+  const db = getInsForgeClient().database;
+  const { data, error } = await db
+    .from("planner_runs")
+    .select()
+    .eq("agent_id", agentId)
+    .order("id", { ascending: false })
+    .limit(limit);
+  if (error || !data) {
+    if (error) logDbWarn("Failed to load planner runs", error);
+    return [];
+  }
+  return data as PlannerRunRow[];
+}
+
+/**
+ * Load a single planner run by id.
+ */
+export async function loadPlannerRunById(runId: number): Promise<PlannerRunRow | null> {
+  const db = getInsForgeClient().database;
+  const { data, error } = await db
+    .from("planner_runs")
+    .select()
+    .eq("id", runId)
+    .maybeSingle();
+  if (error || !data) return null;
+  return data as PlannerRunRow;
+}
+
+/**
+ * Batch-insert planner steps for a run.
+ */
+export async function savePlannerSteps(
+  runId: number,
+  steps: PlannerStepInput[],
+): Promise<PlannerStepRow[]> {
+  const db = getInsForgeClient().database;
+  const rows = steps.map((s, i) => ({
+    run_id: runId,
+    step_index: i,
+    step_type: s.type,
+    target_cult_id: s.targetCultId ?? null,
+    target_agent_id:
+      typeof (s as any).targetAgentId === "number" ? (s as any).targetAgentId : null,
+    amount: s.amount ?? null,
+    message: s.message ?? null,
+    conditions: s.conditions ?? null,
+    payload: {
+      type: s.type,
+      targetCultId: s.targetCultId ?? null,
+      amount: s.amount ?? null,
+      message: s.message ?? null,
+      conditions: s.conditions ?? null,
+    },
+    status: "pending" as const,
+  }));
+  const { data, error } = await db.from("planner_steps").insert(rows).select();
+  if (error) {
+    logDbWarn("Failed to save planner steps", error);
+    return [];
+  }
+  return (data as PlannerStepRow[]) || [];
+}
+
+/**
+ * Update a single planner step's status.
+ */
+export async function updatePlannerStep(
+  stepId: number,
+  updates: Partial<Pick<PlannerStepRow, "status">> & {
+    result?: Record<string, unknown> | null;
+    started_at?: number | null;
+    finished_at?: number | null;
+  },
+): Promise<void> {
+  const db = getInsForgeClient().database;
+  const { error } = await db.from("planner_steps").update(updates).eq("id", stepId);
+  if (error) {
+    logDbWarn(`Failed to update planner step ${stepId}`, error);
+  }
+}
+
+/**
+ * Load all steps for a given planner run.
+ */
+export async function loadPlannerSteps(runId: number): Promise<PlannerStepRow[]> {
+  const db = getInsForgeClient().database;
+  const { data, error } = await db
+    .from("planner_steps")
+    .select()
+    .eq("run_id", runId)
+    .order("step_index", { ascending: true });
+  if (error || !data) {
+    if (error) logDbWarn("Failed to load planner steps", error);
+    return [];
+  }
+  return data as PlannerStepRow[];
+}
+
+/**
+ * Persist the result of executing a single planner step.
+ */
+export async function savePlannerStepResult(result: {
+  step_id: number;
+  run_id: number;
+  status: PlannerStepResultRow["status"];
+  tx_hash?: string | null;
+  error_message?: string | null;
+  output?: Record<string, unknown> | null;
+  started_at: number;
+  finished_at: number | null;
+}): Promise<number> {
+  const db = getInsForgeClient().database;
+  const { data, error } = await db.from("planner_step_results").insert(result).select("id");
+  if (error) {
+    logDbWarn("Failed to save planner step result", error);
+    return -1;
+  }
+  return (data as any[])[0]?.id ?? -1;
+}
+
+/**
+ * Load step results for a given run (ordered by step index via step_id).
+ */
+export async function loadPlannerStepResults(runId: number): Promise<PlannerStepResultRow[]> {
+  const db = getInsForgeClient().database;
+  const { data, error } = await db
+    .from("planner_step_results")
+    .select()
+    .eq("run_id", runId)
+    .order("id", { ascending: true });
+  if (error || !data) {
+    if (error) logDbWarn("Failed to load planner step results", error);
+    return [];
+  }
+  return data as PlannerStepResultRow[];
 }

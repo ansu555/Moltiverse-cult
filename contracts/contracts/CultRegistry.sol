@@ -79,6 +79,14 @@ contract CultRegistry {
         _;
     }
 
+    modifier onlyRaidReporter(uint256 attackerId) {
+        require(
+            msg.sender == owner || msg.sender == cults[attackerId].leader,
+            "Not authorized raider"
+        );
+        _;
+    }
+
     constructor() {
         owner = msg.sender;
     }
@@ -134,7 +142,7 @@ contract CultRegistry {
         uint256 defenderId,
         bool attackerWon,
         uint256 amount
-    ) external onlyOwner {
+    ) external onlyRaidReporter(attackerId) {
         require(cults[attackerId].active, "Attacker not active");
         require(cults[defenderId].active, "Defender not active");
 

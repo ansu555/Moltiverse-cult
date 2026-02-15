@@ -2,6 +2,7 @@ import { CultData } from "../chain/ContractService.js";
 import { MemoryService } from "./MemoryService.js";
 import { createLogger } from "../utils/logger.js";
 import { saveAlliance, updateAllianceActive, saveBetrayal } from "./InsForgeService.js";
+import { RandomnessService } from "./RandomnessService.js";
 
 const log = createLogger("AllianceService");
 
@@ -52,6 +53,7 @@ export interface AllianceEvent {
  *   - Trust score from MemoryService influences alliance decisions
  */
 export class AllianceService {
+    private readonly randomness: RandomnessService;
     private alliances: Alliance[] = [];
     private betrayals: BetrayalEvent[] = [];
     private events: AllianceEvent[] = [];
@@ -63,8 +65,9 @@ export class AllianceService {
     private static readonly BETRAYAL_SURPRISE_BONUS = 1.5; // 50% power bonus for betrayal
     private static readonly MAX_ALLIANCES_PER_CULT = 1; // only 1 active alliance at a time
 
-    constructor(memoryService: MemoryService) {
+    constructor(memoryService: MemoryService, randomness?: RandomnessService) {
         this.memoryService = memoryService;
+        this.randomness = randomness || new RandomnessService();
     }
 
     /**
@@ -301,8 +304,14 @@ export class AllianceService {
         }
 
         // Default: 30% chance
+        const neutralRoll = this.randomness.float({
+            domain: "alliance_neutral_risk",
+            cycle: this.events.length,
+            cultId,
+            agentId: targetId,
+        });
         return {
-            recommend: Math.random() < 0.3,
+            recommend: neutralRoll < 0.3,
             reason: "Neutral stance — taking a calculated risk",
         };
     }
@@ -316,19 +325,54 @@ export class AllianceService {
 
         const allyId = this.getAllyId(cultId)!;
         const trust = this.memoryService.getTrust(cultId, allyId);
+        const cycle = this.events.length + this.betrayals.length + this.alliances.length;
 
         // High trust = very unlikely to betray
-        if (trust > 0.5) return Math.random() < 0.05; // 5% chance
+        if (trust > 0.5) {
+            return (
+                this.randomness.float({
+                    domain: "betray_high_trust",
+                    cycle,
+                    cultId,
+                    agentId: allyId,
+                }) < 0.05
+            ); // 5% chance
+        }
 
         // If we're much stronger, betrayal is tempting
         const powerRatio = cultPower / Math.max(1, allyPower);
-        if (powerRatio > 2) return Math.random() < 0.3; // 30% chance
+        if (powerRatio > 2) {
+            return (
+                this.randomness.float({
+                    domain: "betray_power_advantage",
+                    cycle,
+                    cultId,
+                    agentId: allyId,
+                }) < 0.3
+            ); // 30% chance
+        }
 
         // Near end of alliance, betrayal becomes attractive
         const timeLeft = alliance.expiresAt - Date.now();
-        if (timeLeft < 60000) return Math.random() < 0.2; // 20% in last minute
+        if (timeLeft < 60000) {
+            return (
+                this.randomness.float({
+                    domain: "betray_last_minute",
+                    cycle,
+                    cultId,
+                    agentId: allyId,
+                }) < 0.2
+            ); // 20% in last minute
+        }
 
-        return Math.random() < 0.08; // 8% base chance
+        return (
+            this.randomness.float({
+                domain: "betray_base",
+                cycle,
+                cultId,
+                agentId: allyId,
+            }) < 0.08
+        ); // 8% base chance
     }
 
     getEvents(limit: number = 20): AllianceEvent[] {
